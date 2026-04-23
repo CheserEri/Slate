@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_provider.dart';
+import '../providers/connectivity_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(appSettingsProvider);
+    final themeMode = ref.watch(themeProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -73,27 +74,27 @@ class SettingsScreen extends ConsumerWidget {
             ListTile(
               title: const Text('跟随系统'),
               leading: const Icon(Icons.brightness_auto),
-              selected: ref.read(appSettingsProvider) == ThemeMode.system,
+              selected: ref.read(themeProvider) == ThemeMode.system,
               onTap: () {
-                ref.read(appSettingsProvider.notifier).setTheme(ThemeMode.system);
+                ref.read(themeProvider.notifier).setMode(ThemeMode.system);
                 Navigator.pop(ctx);
               },
             ),
             ListTile(
               title: const Text('浅色'),
               leading: const Icon(Icons.brightness_7),
-              selected: ref.read(appSettingsProvider) == ThemeMode.light,
+              selected: ref.read(themeProvider) == ThemeMode.light,
               onTap: () {
-                ref.read(appSettingsProvider.notifier).setTheme(ThemeMode.light);
+                ref.read(themeProvider.notifier).setMode(ThemeMode.light);
                 Navigator.pop(ctx);
               },
             ),
             ListTile(
               title: const Text('深色'),
               leading: const Icon(Icons.brightness_2),
-              selected: ref.read(appSettingsProvider) == ThemeMode.dark,
+              selected: ref.read(themeProvider) == ThemeMode.dark,
               onTap: () {
-                ref.read(appSettingsProvider.notifier).setTheme(ThemeMode.dark);
+                ref.read(themeProvider.notifier).setMode(ThemeMode.dark);
                 Navigator.pop(ctx);
               },
             ),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
 import '../utils/constants.dart';
@@ -141,7 +142,7 @@ class ApiService {
   }
 
   Future<void> fetchHealth() async {
-    final response = await http.get(Uri.parse('$baseUrl/health'));
+    final response = await http.get(Uri.parse('${ApiConstants.baseUrl}/health'));
     if (response.statusCode != 200) {
       throw ApiException('Health check failed', statusCode: response.statusCode);
     }

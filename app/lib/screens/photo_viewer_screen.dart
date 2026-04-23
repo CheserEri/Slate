@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/transfer_provider.dart';
 import '../providers/smb_provider.dart';
+import '../services/api_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:exif/exif.dart' as exif_pkg;
 import 'dart:typed_data';
@@ -223,9 +224,7 @@ class _BottomActionBar extends ConsumerWidget {
     }
   }
 
-  String _extractServerId(String path) {
-    return path.split('/').first;
-  }
+
 
   void _showInfo(BuildContext context) {
     showModalBottomSheet(
@@ -407,6 +406,10 @@ class _ExifInfoSheetState extends State<_ExifInfoSheet> {
       },
     );
   }
+}
+
+String _extractServerId(String path) {
+  return path.split('/').first;
 }
 
 class _InfoRow extends StatelessWidget {
