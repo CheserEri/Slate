@@ -5,6 +5,7 @@ import 'photos_screen.dart';
 import 'albums_screen.dart';
 import 'smb_screen.dart';
 import 'transfers_screen.dart';
+import 'settings_screen.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});

@@ -10,6 +10,7 @@ class ApiConstants {
   static String smbItems(String id) => '$baseUrl/smb/servers/$id/items';
   static String smbDownload(String id) => '$baseUrl/smb/servers/$id/download';
   static String smbUpload(String id) => '$baseUrl/smb/servers/$id/upload';
+  static String smbPreview(String id) => '$baseUrl/smb/servers/$id/preview';
   static String get transfers => '$baseUrl/transfers';
   static String transfer(String id) => '$baseUrl/transfers/$id';
   static String transferPause(String id) => '$baseUrl/transfers/$id/pause';

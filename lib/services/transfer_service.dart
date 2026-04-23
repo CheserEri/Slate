@@ -2,13 +2,24 @@ import 'dart:async';
 import 'dart:io';
 import '../models/models.dart';
 import 'smb_photo_service.dart';
+import 'persistent_store.dart';
 
 class TransferService {
   final SmbPhotoService _smbService;
+  final PersistentStore _store;
   final Map<String, TransferTask> _tasks = {};
   int _idCounter = 0;
 
-  TransferService(this._smbService);
+  TransferService(this._smbService, this._store) {
+    final saved = _store.loadTasks();
+    for (final task in saved) {
+      _tasks[task.id] = task;
+      final counter = int.tryParse(task.id.split('_')[1]);
+      if (counter != null && counter > _idCounter) {
+        _idCounter = counter;
+      }
+    }
+  }
 
   List<TransferTask> get tasks => List.unmodifiable(_tasks.values);
 
@@ -167,6 +178,7 @@ class TransferService {
       errorMessage: errorMessage ?? task.errorMessage,
       updatedAt: DateTime.now(),
     );
+    _store.saveTasks(_tasks.values.toList());
   }
 
   void pauseTask(String id) {
@@ -179,12 +191,14 @@ class TransferService {
 
   void cancelTask(String id) {
     _tasks.remove(id);
+    _store.saveTasks(_tasks.values.toList());
   }
 
   void clearCompleted() {
     _tasks.removeWhere(
       (_, t) => t.status == TransferStatus.done || t.status == TransferStatus.failed,
     );
+    _store.saveTasks(_tasks.values.toList());
   }
 
   String _sanitizeFileName(String name) {

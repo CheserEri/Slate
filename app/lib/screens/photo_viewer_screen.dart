@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/transfer_provider.dart';
 import '../providers/smb_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:exif/exif.dart' as exif_pkg;
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 
 class PhotoViewerScreen extends StatefulWidget {
   final List<MediaItem> photos;
@@ -61,10 +65,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                   maxScale: 4.0,
                   child: Center(
                     child: widget.isRemote
-                        ? Container(
-                            color: Colors.grey[900],
-                            child: const Icon(Icons.image, size: 64, color: Colors.white30),
-                          )
+                        ? _RemotePhotoViewer(serverId: _extractServerId(item.path), remotePath: item.path, name: item.name)
                         : Image.file(
                             File(item.path),
                             fit: BoxFit.contain,
@@ -148,7 +149,7 @@ class _BottomActionBar extends ConsumerWidget {
           _ActionButton(
             icon: Icons.share,
             label: '分享',
-            onTap: () {},
+            onTap: () => _sharePhoto(context),
           ),
           if (!isRemote && servers.isNotEmpty)
             _ActionButton(
@@ -160,7 +161,7 @@ class _BottomActionBar extends ConsumerWidget {
             _ActionButton(
               icon: Icons.download,
               label: '下载',
-              onTap: () {},
+              onTap: () => _downloadRemote(context),
             ),
           _ActionButton(
             icon: Icons.info_outline,
@@ -183,26 +184,55 @@ class _BottomActionBar extends ConsumerWidget {
     );
   }
 
+  Future<void> _sharePhoto(BuildContext context) async {
+    try {
+      if (isRemote) {
+        final serverId = _extractServerId(photo.path);
+        final url = await ApiService().previewSmbFileUrl(serverId, photo.path);
+        await Share.share(url, subject: photo.name);
+      } else {
+        await Share.shareXFiles([XFile(photo.path)], text: photo.name);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分享失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _downloadRemote(BuildContext context) async {
+    try {
+      final serverId = _extractServerId(photo.path);
+      final dir = Directory('/storage/emulated/0/Download/Slate');
+      await dir.create(recursive: true);
+      final savePath = '${dir.path}/${photo.name}';
+      await ApiService().downloadSmbFileToLocal(serverId, photo.path, savePath);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已保存到 Downloads/Slate/${photo.name}')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('下载失败: $e')),
+        );
+      }
+    }
+  }
+
+  String _extractServerId(String path) {
+    return path.split('/').first;
+  }
+
   void _showInfo(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('文件信息', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
-            const SizedBox(height: 12),
-            _InfoRow('名称', photo.name),
-            _InfoRow('路径', photo.path),
-            _InfoRow('大小', '${photo.size} bytes'),
-            _InfoRow('类型', photo.mimeType),
-            _InfoRow('时间', photo.modifiedAt.toString()),
-          ],
-        ),
-      ),
+      isScrollControlled: true,
+      builder: (_) => _ExifInfoSheet(photo: photo, isRemote: isRemote),
     );
   }
 }
@@ -234,6 +264,151 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
+class _RemotePhotoViewer extends StatefulWidget {
+  final String serverId;
+  final String remotePath;
+  final String name;
+  const _RemotePhotoViewer({required this.serverId, required this.remotePath, required this.name});
+
+  @override
+  State<_RemotePhotoViewer> createState() => _RemotePhotoViewerState();
+}
+
+class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
+  String? _url;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final url = await ApiService().previewSmbFileUrl(widget.serverId, widget.remotePath);
+      if (mounted) setState(() { _url = url; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        color: Colors.grey[900],
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_url == null) {
+      return Container(
+        color: Colors.grey[900],
+        child: const Icon(Icons.broken_image, size: 64, color: Colors.white30),
+      );
+    }
+    return Image.network(
+      _url!,
+      fit: BoxFit.contain,
+      headers: const {'Accept': 'image/*'},
+      loadingBuilder: (_, child, progress) {
+        if (progress == null) return child;
+        return Container(
+          color: Colors.grey[900],
+          child: const Center(child: CircularProgressIndicator()),
+        );
+      },
+      errorBuilder: (_, __, ___) => Container(
+        color: Colors.grey[900],
+        child: const Icon(Icons.broken_image, size: 64, color: Colors.white30),
+      ),
+    );
+  }
+}
+
+class _ExifInfoSheet extends StatefulWidget {
+  final MediaItem photo;
+  final bool isRemote;
+  const _ExifInfoSheet({required this.photo, required this.isRemote});
+
+  @override
+  State<_ExifInfoSheet> createState() => _ExifInfoSheetState();
+}
+
+class _ExifInfoSheetState extends State<_ExifInfoSheet> {
+  Map<String, dynamic>? _exif;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExif();
+  }
+
+  Future<void> _loadExif() async {
+    try {
+      if (!widget.isRemote) {
+        final fileBytes = await File(widget.photo.path).readAsBytes();
+        final data = await exif_pkg.readExifFromBytes(fileBytes);
+        _exif = data.map((k, v) => MapEntry(k, v.toString()));
+      } else {
+        final serverId = widget.photo.path.split('/').first;
+        final url = await ApiService().previewSmbFileUrl(serverId, widget.photo.path);
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode == 200) {
+          final data = await exif_pkg.readExifFromBytes(response.bodyBytes);
+          _exif = data.map((k, v) => MapEntry(k, v.toString()));
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      builder: (_, controller) {
+        return Container(
+          color: Colors.grey[900],
+          padding: const EdgeInsets.all(16),
+          child: ListView(
+            controller: controller,
+            children: [
+              Text('文件信息', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
+              const SizedBox(height: 12),
+              _InfoRow('名称', widget.photo.name),
+              _InfoRow('路径', widget.photo.path),
+              _InfoRow('大小', _formatSize(widget.photo.size)),
+              _InfoRow('类型', widget.photo.mimeType),
+              _InfoRow('时间', widget.photo.modifiedAt.toString()),
+              _InfoRow('分辨率', '${widget.photo.width} x ${widget.photo.height}'),
+              const SizedBox(height: 16),
+              if (_loading)
+                const Center(child: CircularProgressIndicator())
+              else if (_exif != null && _exif!.isNotEmpty) ...[
+                Text('EXIF', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.white)),
+                const SizedBox(height: 8),
+                ..._exif!.entries.take(20).map((e) => _InfoRow(e.key, e.value)),
+              ] else
+                const Text('无 EXIF 数据', style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
@@ -247,7 +422,7 @@ class _InfoRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 60,
+            width: 100,
             child: Text('$label:', style: const TextStyle(color: Colors.grey, fontSize: 13)),
           ),
           Expanded(

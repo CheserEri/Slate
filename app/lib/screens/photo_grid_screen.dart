@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/album_provider.dart';
+import '../services/api_service.dart';
 import '../providers/smb_provider.dart';
 import 'photo_viewer_screen.dart';
 
@@ -61,10 +62,7 @@ class PhotoGridScreen extends ConsumerWidget {
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => _fallback(),
                       )
-                    : Container(
-                        color: Colors.grey[800],
-                        child: const Icon(Icons.image, color: Colors.white54),
-                      ),
+                    : _RemoteImage(serverId: albumId, remotePath: item.path, name: item.name),
               );
             },
           );
@@ -77,6 +75,73 @@ class PhotoGridScreen extends ConsumerWidget {
     return Container(
       color: Colors.grey[800],
       child: const Icon(Icons.broken_image, color: Colors.white54),
+    );
+  }
+}
+
+class _RemoteImage extends StatefulWidget {
+  final String serverId;
+  final String remotePath;
+  final String name;
+  const _RemoteImage({required this.serverId, required this.remotePath, required this.name});
+
+  @override
+  State<_RemoteImage> createState() => _RemoteImageState();
+}
+
+class _RemoteImageState extends State<_RemoteImage> {
+  String? _url;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUrl();
+  }
+
+  Future<void> _loadUrl() async {
+    try {
+      final url = await ApiService().previewSmbFileUrl(widget.serverId, widget.remotePath);
+      if (mounted) {
+        setState(() {
+          _url = url;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        color: Colors.grey[800],
+        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    if (_url == null) {
+      return Container(
+        color: Colors.grey[800],
+        child: const Icon(Icons.broken_image, color: Colors.white54),
+      );
+    }
+    return Image.network(
+      _url!,
+      fit: BoxFit.cover,
+      headers: const {'Accept': 'image/*'},
+      loadingBuilder: (_, child, progress) {
+        if (progress == null) return child;
+        return Container(
+          color: Colors.grey[800],
+          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        );
+      },
+      errorBuilder: (_, __, ___) => Container(
+        color: Colors.grey[800],
+        child: const Icon(Icons.broken_image, color: Colors.white54),
+      ),
     );
   }
 }

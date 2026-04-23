@@ -37,6 +37,7 @@ class SmbScreen extends ConsumerWidget {
                 onDelete: () => _confirmDelete(context, ref, server),
                 onTest: () => _testConnection(context, ref, server),
                 onBrowse: () => _browseServer(context, ref, server),
+                onEdit: () => _showEditDialog(context, ref, server),
               );
             },
           );
@@ -121,6 +122,60 @@ class SmbScreen extends ConsumerWidget {
     );
   }
 
+  void _showEditDialog(BuildContext context, WidgetRef ref, SmbConfig server) {
+    final nameCtrl = TextEditingController(text: server.name);
+    final hostCtrl = TextEditingController(text: server.host);
+    final portCtrl = TextEditingController(text: server.port.toString());
+    final shareCtrl = TextEditingController(text: server.share);
+    final rootPathCtrl = TextEditingController(text: server.rootPath);
+    final userCtrl = TextEditingController(text: server.username);
+    final passCtrl = TextEditingController(text: server.password ?? '');
+    final domainCtrl = TextEditingController(text: server.domain);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑 SMB 服务器'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '名称')),
+              TextField(controller: hostCtrl, decoration: const InputDecoration(labelText: '主机')),
+              TextField(controller: portCtrl, decoration: const InputDecoration(labelText: '端口'), keyboardType: TextInputType.number),
+              TextField(controller: shareCtrl, decoration: const InputDecoration(labelText: '共享名')),
+              TextField(controller: rootPathCtrl, decoration: const InputDecoration(labelText: '根路径 (可选)', hintText: '/')),
+              TextField(controller: userCtrl, decoration: const InputDecoration(labelText: '用户名')),
+              TextField(controller: passCtrl, decoration: const InputDecoration(labelText: '密码'), obscureText: true),
+              TextField(controller: domainCtrl, decoration: const InputDecoration(labelText: '域 (可选)')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () async {
+              final updated = server.copyWith(
+                name: nameCtrl.text,
+                host: hostCtrl.text,
+                port: int.tryParse(portCtrl.text) ?? 445,
+                share: shareCtrl.text,
+                rootPath: rootPathCtrl.text,
+                username: userCtrl.text,
+                password: passCtrl.text.isEmpty ? null : passCtrl.text,
+                domain: domainCtrl.text,
+                updatedAt: DateTime.now(),
+              );
+              await ref.read(smbServersProvider.notifier).updateServer(server.id, updated);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _testConnection(BuildContext context, WidgetRef ref, SmbConfig server) async {
     final result = await ref.read(smbServersProvider.notifier).testConnection(server.id);
     if (context.mounted) {
@@ -175,12 +230,14 @@ class _ServerCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onTest;
   final VoidCallback onBrowse;
+  final VoidCallback onEdit;
 
   const _ServerCard({
     required this.server,
     required this.onDelete,
     required this.onTest,
     required this.onBrowse,
+    required this.onEdit,
   });
 
   @override
@@ -195,11 +252,13 @@ class _ServerCard extends StatelessWidget {
           onSelected: (value) {
             if (value == 'test') onTest();
             if (value == 'browse') onBrowse();
+            if (value == 'edit') onEdit();
             if (value == 'delete') onDelete();
           },
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'test', child: Text('测试连接')),
             const PopupMenuItem(value: 'browse', child: Text('浏览目录')),
+            const PopupMenuItem(value: 'edit', child: Text('编辑')),
             const PopupMenuItem(value: 'delete', child: Text('删除')),
           ],
         ),

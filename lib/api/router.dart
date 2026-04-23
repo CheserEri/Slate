@@ -6,18 +6,26 @@ import '../models/models.dart';
 import '../services/local_photo_service.dart';
 import '../services/smb_photo_service.dart';
 import '../services/transfer_service.dart';
+import '../services/persistent_store.dart';
 
 class ApiRouter {
   final LocalPhotoService localService;
   final SmbPhotoService smbService;
   final TransferService transferService;
+  final PersistentStore _store;
   final Map<String, SmbConfig> _smbServers = {};
 
   ApiRouter({
     required this.localService,
     required this.smbService,
     required this.transferService,
-  });
+    required PersistentStore store,
+  }) : _store = store {
+    final saved = _store.loadServers();
+    for (final s in saved) {
+      _smbServers[s.id] = s;
+    }
+  }
 
   Router get router {
     final router = Router();
@@ -37,7 +45,10 @@ class ApiRouter {
     router.get('/smb/servers/<id>/items', _getSmbItems);
     router.post('/smb/servers/<id>/download', _downloadSmbFile);
     router.post('/smb/servers/<id>/upload', _uploadSmbFile);
+    router.put('/smb/servers/<id>', _updateSmbServer);
+    router.get('/smb/servers/<id>/preview', _previewSmbFile);
 
+    router.get('/health', _healthCheck);
     router.get('/transfers', _getTransfers);
     router.delete('/transfers/<id>', _cancelTransfer);
     router.post('/transfers/<id>/pause', _pauseTransfer);
@@ -120,6 +131,7 @@ class ApiRouter {
         updatedAt: DateTime.now(),
       );
       _smbServers[config.id] = config;
+      _store.saveServers(_smbServers.values.toList());
       return Response.ok(
         jsonEncode(config.toJson(includePassword: false)),
         headers: {'content-type': 'application/json'},
@@ -158,10 +170,47 @@ class ApiRouter {
 
   Response _deleteSmbServer(Request req, String id) {
     _smbServers.remove(id);
+    _store.saveServers(_smbServers.values.toList());
     return Response.ok(
       jsonEncode({'success': true}),
       headers: {'content-type': 'application/json'},
     );
+  }
+
+  Future<Response> _updateSmbServer(Request req, String id) async {
+    final config = _smbServers[id];
+    if (config == null) {
+      return Response.notFound(
+        jsonEncode({'error': 'Server not found'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+    try {
+      final body = await req.readAsString();
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final updated = config.copyWith(
+        name: json['name'] as String?,
+        host: json['host'] as String?,
+        port: (json['port'] as num?)?.toInt(),
+        share: json['share'] as String?,
+        rootPath: json['root_path'] as String?,
+        username: json['username'] as String?,
+        password: json['password'] as String?,
+        domain: json['domain'] as String?,
+        updatedAt: DateTime.now(),
+      );
+      _smbServers[id] = updated;
+      _store.saveServers(_smbServers.values.toList());
+      return Response.ok(
+        jsonEncode(updated.toJson(includePassword: false)),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.badRequest(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
   }
 
   Future<Response> _testSmbConnection(Request req, String id) async {
@@ -253,6 +302,61 @@ class ApiRouter {
       return Response.ok(
         jsonEncode(items.map((i) => i.toJson()).toList()),
         headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _previewSmbFile(Request req, String id) async {
+    final config = _smbServers[id];
+    if (config == null) {
+      return Response.notFound(
+        jsonEncode({'error': 'Server not found'}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+    try {
+      final remotePath = req.url.queryParameters['path'] ?? '';
+      if (remotePath.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Missing path parameter'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      final tempDir = Directory.systemTemp.createTempSync('slate_preview_');
+      final fileName = remotePath.split('/').last;
+      final localPath = '${tempDir.path}/$fileName';
+      
+      await smbService.downloadFile(config, remotePath, localPath);
+      final file = File(localPath);
+      if (!await file.exists()) {
+        return Response.notFound('File not found');
+      }
+      final bytes = await file.readAsBytes();
+      final ext = fileName.toLowerCase();
+      String contentType = 'application/octet-stream';
+      if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) contentType = 'image/jpeg';
+      else if (ext.endsWith('.png')) contentType = 'image/png';
+      else if (ext.endsWith('.gif')) contentType = 'image/gif';
+      else if (ext.endsWith('.webp')) contentType = 'image/webp';
+      else if (ext.endsWith('.bmp')) contentType = 'image/bmp';
+      else if (ext.endsWith('.heic') || ext.endsWith('.heif')) contentType = 'image/heic';
+      
+      // 清理临时文件
+      Timer(const Duration(minutes: 5), () {
+        tempDir.deleteSync(recursive: true);
+      });
+      
+      return Response.ok(
+        bytes,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'max-age=3600',
+        },
       );
     } catch (e) {
       return Response.internalServerError(

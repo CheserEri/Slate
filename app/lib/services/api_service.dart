@@ -59,6 +59,22 @@ class ApiService {
     }
   }
 
+  Future<SmbConfig> updateSmbServer(String id, SmbConfig config) async {
+    final response = await http.put(
+      Uri.parse(ApiConstants.smbServer(id)),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(config.toJson()),
+    );
+    return _parseSingle(response, SmbConfig.fromJson);
+  }
+
+  Future<String> previewSmbFileUrl(String serverId, String remotePath) async {
+    final uri = Uri.parse(ApiConstants.smbPreview(serverId)).replace(
+      queryParameters: {'path': remotePath},
+    );
+    return uri.toString();
+  }
+
   Future<List<Album>> fetchSmbAlbums(String id, {String path = ''}) async {
     final uri = Uri.parse(ApiConstants.smbAlbums(id)).replace(
       queryParameters: path.isNotEmpty ? {'path': path} : null,
@@ -105,6 +121,30 @@ class ApiService {
       }),
     );
     return _parseSingle(response, TransferTask.fromJson);
+  }
+
+  Future<void> downloadSmbFileToLocal(
+    String serverId,
+    String remotePath,
+    String savePath,
+  ) async {
+    final uri = Uri.parse(ApiConstants.smbPreview(serverId)).replace(
+      queryParameters: {'path': remotePath},
+    );
+    final response = await http.get(uri);
+    if (response.statusCode != 200) {
+      throw ApiException('Download failed', statusCode: response.statusCode);
+    }
+    final file = File(savePath);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(response.bodyBytes);
+  }
+
+  Future<void> fetchHealth() async {
+    final response = await http.get(Uri.parse('$baseUrl/health'));
+    if (response.statusCode != 200) {
+      throw ApiException('Health check failed', statusCode: response.statusCode);
+    }
   }
 
   Future<List<TransferTask>> fetchTransfers() async {

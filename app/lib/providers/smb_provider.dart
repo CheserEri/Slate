@@ -35,6 +35,11 @@ class SmbServersNotifier extends StateNotifier<AsyncValue<List<SmbConfig>>> {
   Future<bool> testConnection(String id) async {
     return await ApiService().testSmbConnection(id);
   }
+
+  Future<void> updateServer(String id, SmbConfig config) async {
+    await ApiService().updateSmbServer(id, config);
+    await load();
+  }
 }
 
 final selectedSmbServerProvider = StateProvider<String?>((ref) => null);

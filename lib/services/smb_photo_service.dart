@@ -10,7 +10,8 @@ class SmbPhotoService {
   }
 
   Future<List<SmbFileInfo>> listDirectory(SmbConfig config, String path) async {
-    final normalized = _normalizePath(path);
+    final effectivePath = _effectivePath(config, path);
+    final normalized = _normalizePath(effectivePath);
     final command = normalized.isEmpty || normalized == '\\'
         ? 'ls'
         : 'cd "$normalized"; ls';
@@ -33,18 +34,22 @@ class SmbPhotoService {
     }
 
     final normalizedRemote = remotePath.replaceAll('/', '\\');
+    final args = <String>[
+      '//${config.host}/${config.share}',
+      '-p',
+      '${config.port}',
+      '-U',
+      config.username,
+      '--password=${config.password ?? ''}',
+      '-c',
+      'get "$normalizedRemote" "$localPath"',
+    ];
+    if (config.domain.isNotEmpty) {
+      args.addAll(['-W', config.domain]);
+    }
     final process = await Process.start(
       'smbclient',
-      [
-        '//${config.host}/${config.share}',
-        '-p',
-        '${config.port}',
-        '-U',
-        config.username,
-        '--password=${config.password ?? ''}',
-        '-c',
-        'get "$normalizedRemote" "$localPath"',
-      ],
+      args,
     );
 
     Timer? timer;
@@ -80,18 +85,22 @@ class SmbPhotoService {
     final totalBytes = await file.length();
 
     final normalizedRemote = remotePath.replaceAll('/', '\\');
+    final args = <String>[
+      '//${config.host}/${config.share}',
+      '-p',
+      '${config.port}',
+      '-U',
+      config.username,
+      '--password=${config.password ?? ''}',
+      '-c',
+      'put "$localPath" "$normalizedRemote"',
+    ];
+    if (config.domain.isNotEmpty) {
+      args.addAll(['-W', config.domain]);
+    }
     final process = await Process.start(
       'smbclient',
-      [
-        '//${config.host}/${config.share}',
-        '-p',
-        '${config.port}',
-        '-U',
-        config.username,
-        '--password=${config.password ?? ''}',
-        '-c',
-        'put "$localPath" "$normalizedRemote"',
-      ],
+      args,
     );
 
     Timer? timer;
@@ -111,18 +120,22 @@ class SmbPhotoService {
   }
 
   Future<ProcessResult> _runSmbClient(SmbConfig config, String command) async {
+    final args = <String>[
+      '//${config.host}/${config.share}',
+      '-p',
+      '${config.port}',
+      '-U',
+      config.username,
+      '--password=${config.password ?? ''}',
+      '-c',
+      command,
+    ];
+    if (config.domain.isNotEmpty) {
+      args.addAll(['-W', config.domain]);
+    }
     return Process.run(
       'smbclient',
-      [
-        '//${config.host}/${config.share}',
-        '-p',
-        '${config.port}',
-        '-U',
-        config.username,
-        '--password=${config.password ?? ''}',
-        '-c',
-        command,
-      ],
+      args,
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );
@@ -131,6 +144,12 @@ class SmbPhotoService {
   String _normalizePath(String path) {
     if (path.isEmpty || path == '/') return '';
     return path.replaceAll('/', '\\');
+  }
+
+  String _effectivePath(SmbConfig config, String path) {
+    if (config.rootPath.isEmpty) return path;
+    if (path.isEmpty || path == '/') return config.rootPath;
+    return '${config.rootPath}/$path';
   }
 
   List<SmbFileInfo> _parseLsOutput(String output) {
