@@ -1,200 +1,193 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
+import 'dart:io';
 import '../models/models.dart';
-
-enum TransferState { idle, running, paused }
-
-class TransferTaskUi {
-  final String id;
-  final String serverId;
-  final TransferType transferType;
-  final String remotePath;
-  final String localPath;
-  final int totalBytes;
-  final int writtenBytes;
-  final TransferStatus status;
-  final String? errorMessage;
-
-  TransferTaskUi({
-    required this.id,
-    required this.serverId,
-    required this.transferType,
-    required this.remotePath,
-    required this.localPath,
-    required this.totalBytes,
-    required this.writtenBytes,
-    required this.status,
-    this.errorMessage,
-  });
-
-  double get progress => totalBytes > 0 ? writtenBytes / totalBytes : 0;
-
-  String get progressText => '${(progress * 100).toStringAsFixed(1)}%';
-
-  String get sizeText {
-    final downloaded = _formatBytes(writtenBytes);
-    final total = _formatBytes(totalBytes);
-    return '$downloaded / $total';
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-}
+import 'smb_photo_service.dart';
 
 class TransferService {
-  final Ref ref;
+  final SmbPhotoService _smbService;
+  final Map<String, TransferTask> _tasks = {};
+  int _idCounter = 0;
 
-  TransferService(this.ref);
+  TransferService(this._smbService);
 
-  final List<TransferTaskUi> _tasks = [];
-  final Map<String, double> _progressMap = {};
+  List<TransferTask> get tasks => List.unmodifiable(_tasks.values);
 
-  List<TransferTaskUi> get tasks => List.unmodifiable(_tasks);
-
-  Stream<TransferTaskUi> startDownload({
-    required String id,
-    required String serverId,
+  Future<TransferTask> startDownload({
+    required SmbConfig config,
     required String remotePath,
-    required String localPath,
-    required int totalBytes,
-  }) async* {
-    final task = TransferTaskUi(
+    required String localDir,
+  }) async {
+    final id = 'dl_${++_idCounter}_${DateTime.now().millisecondsSinceEpoch}';
+    final fileName = remotePath.split('/').last;
+    final localPath = '$localDir/${_sanitizeFileName(fileName)}';
+
+    final task = TransferTask(
       id: id,
-      serverId: serverId,
+      serverId: config.id,
       transferType: TransferType.download,
+      remotePath: remotePath,
+      localPath: localPath,
+      totalBytes: 0,
+      writtenBytes: 0,
+      status: TransferStatus.pending,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    _tasks[id] = task;
+
+    try {
+      final parentPath = remotePath.contains('/')
+          ? remotePath.substring(0, remotePath.lastIndexOf('/'))
+          : '';
+      final files = await _smbService.listDirectory(
+        config,
+        parentPath.isEmpty ? '/' : parentPath,
+      );
+      final remoteFile = files.firstWhere(
+        (f) => f.name == fileName,
+        orElse: () => throw Exception('File not found: $remotePath'),
+      );
+      _tasks[id] = task.copyWith(
+        totalBytes: remoteFile.size,
+        status: TransferStatus.running,
+      );
+    } catch (e) {
+      _tasks[id] = task.copyWith(
+        status: TransferStatus.failed,
+        errorMessage: e.toString(),
+      );
+      return _tasks[id]!;
+    }
+
+    _runDownload(id, config, remotePath, localPath);
+
+    return _tasks[id]!;
+  }
+
+  Future<TransferTask> startUpload({
+    required SmbConfig config,
+    required String localPath,
+    required String remoteDir,
+  }) async {
+    final id = 'ul_${++_idCounter}_${DateTime.now().millisecondsSinceEpoch}';
+    final fileName = localPath.split(Platform.pathSeparator).last;
+    final remotePath = remoteDir.endsWith('/')
+        ? '$remoteDir$fileName'
+        : '$remoteDir/$fileName';
+
+    final file = File(localPath);
+    int totalBytes = 0;
+    if (await file.exists()) {
+      totalBytes = await file.length();
+    }
+
+    final task = TransferTask(
+      id: id,
+      serverId: config.id,
+      transferType: TransferType.upload,
       remotePath: remotePath,
       localPath: localPath,
       totalBytes: totalBytes,
       writtenBytes: 0,
-      status: TransferStatus.running,
+      status: TransferStatus.pending,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
 
-    _tasks.add(task);
+    _tasks[id] = task;
+    _tasks[id] = task.copyWith(status: TransferStatus.running);
 
-    yield task;
+    _runUpload(id, config, localPath, remotePath);
 
-    for (int written = 0; written <= totalBytes; written += totalBytes ~/ 20) {
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      final index = _tasks.indexWhere((t) => t.id == id);
-      if (index >= 0) {
-        _tasks[index] = TransferTaskUi(
-          id: id,
-          serverId: serverId,
-          transferType: TransferType.download,
-          remotePath: remotePath,
-          localPath: localPath,
-          totalBytes: totalBytes,
-          writtenBytes: written,
-          status: TransferStatus.running,
-        );
-        yield _tasks[index];
-      }
-    }
+    return _tasks[id]!;
   }
 
-  Future<void> pauseTask(String taskId) async {
-    final index = _tasks.indexWhere((t) => t.id == taskId);
-    if (index >= 0) {
-      final task = _tasks[index];
-      _tasks[index] = TransferTaskUi(
-        id: task.id,
-        serverId: task.serverId,
-        transferType: task.transferType,
-        remotePath: task.remotePath,
-        localPath: task.localPath,
-        totalBytes: task.totalBytes,
-        writtenBytes: task.writtenBytes,
-        status: TransferStatus.paused,
+  Future<void> _runDownload(
+    String id,
+    SmbConfig config,
+    String remotePath,
+    String localPath,
+  ) async {
+    try {
+      await _smbService.downloadFile(
+        config,
+        remotePath,
+        localPath,
+        onProgress: (received, _) {
+          _updateTask(id, received: received, status: TransferStatus.running);
+        },
       );
-    }
-  }
 
-  Future<void> resumeTask(String taskId) async {
-    final index = _tasks.indexWhere((t) => t.id == taskId);
-    if (index >= 0) {
-      final task = _tasks[index];
-      _tasks[index] = TransferTaskUi(
-        id: task.id,
-        serverId: task.serverId,
-        transferType: task.transferType,
-        remotePath: task.remotePath,
-        localPath: task.localPath,
-        totalBytes: task.totalBytes,
-        writtenBytes: task.writtenBytes,
-        status: TransferStatus.running,
+      final localFile = File(localPath);
+      final finalSize = await localFile.length();
+      _updateTask(
+        id,
+        received: finalSize,
+        status: TransferStatus.done,
       );
+    } catch (e) {
+      _updateTask(id, status: TransferStatus.failed, errorMessage: e.toString());
     }
   }
 
-  Future<void> cancelTask(String taskId) async {
-    _tasks.removeWhere((t) => t.id == taskId);
+  Future<void> _runUpload(
+    String id,
+    SmbConfig config,
+    String localPath,
+    String remotePath,
+  ) async {
+    try {
+      await _smbService.uploadFile(
+        config,
+        localPath,
+        remotePath,
+        onProgress: (sent, total) {
+          _updateTask(id, received: sent, status: TransferStatus.running);
+        },
+      );
+      _updateTask(id, received: _tasks[id]!.totalBytes, status: TransferStatus.done);
+    } catch (e) {
+      _updateTask(id, status: TransferStatus.failed, errorMessage: e.toString());
+    }
+  }
+
+  void _updateTask(
+    String id, {
+    int? received,
+    TransferStatus? status,
+    String? errorMessage,
+  }) {
+    final task = _tasks[id];
+    if (task == null) return;
+
+    _tasks[id] = task.copyWith(
+      writtenBytes: received ?? task.writtenBytes,
+      status: status ?? task.status,
+      errorMessage: errorMessage ?? task.errorMessage,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  void pauseTask(String id) {
+    _updateTask(id, status: TransferStatus.paused);
+  }
+
+  void resumeTask(String id) {
+    _updateTask(id, status: TransferStatus.running);
+  }
+
+  void cancelTask(String id) {
+    _tasks.remove(id);
   }
 
   void clearCompleted() {
     _tasks.removeWhere(
-      (t) =>
-          t.status == TransferStatus.done || t.status == TransferStatus.failed,
+      (_, t) => t.status == TransferStatus.done || t.status == TransferStatus.failed,
     );
   }
-}
 
-final transferServiceProvider = Provider<TransferService>((ref) {
-  return TransferService(ref);
-});
-
-final transferTasksProvider =
-    StateNotifierProvider<TransferTasksNotifier, List<TransferTaskUi>>((ref) {
-      return TransferTasksNotifier(ref);
-    });
-
-class TransferTasksNotifier extends StateNotifier<List<TransferTaskUi>> {
-  final Ref ref;
-
-  TransferTasksNotifier(this.ref) : super([]);
-
-  void addTask(TransferTaskUi task) {
-    state = [...state, task];
-  }
-
-  void updateTask(String id, TransferTaskUi task) {
-    state = [
-      for (final t in state)
-        if (t.id == id) task else t,
-    ];
-  }
-
-  void removeTask(String id) {
-    state = state.where((t) => t.id != id).toList();
-  }
-
-  void clearCompleted() {
-    state = state
-        .where(
-          (t) =>
-              t.status != TransferStatus.done &&
-              t.status != TransferStatus.failed,
-        )
-        .toList();
+  String _sanitizeFileName(String name) {
+    return name.replaceAll(RegExp(r'[\/:*?"<>|]'), '_');
   }
 }
-
-final downloadQueueProvider = Provider<List<TransferTaskUi>>((ref) {
-  final tasks = ref.watch(transferTasksProvider);
-  return tasks.where((t) => t.transferType == TransferType.download).toList();
-});
-
-final uploadQueueProvider = Provider<List<TransferTaskUi>>((ref) {
-  final tasks = ref.watch(transferTasksProvider);
-  return tasks.where((t) => t.transferType == TransferType.upload).toList();
-});
-
-final activeTransferCountProvider = Provider<int>((ref) {
-  final tasks = ref.watch(transferTasksProvider);
-  return tasks.where((t) => t.status == TransferStatus.running).length;
-});

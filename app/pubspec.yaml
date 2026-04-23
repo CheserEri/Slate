@@ -1,0 +1,21 @@
+name: slate_app
+description: "Slate - SMB Gallery with local album support"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  photo_manager: ^3.6.0
+  flutter_riverpod: ^2.6.1
+  http: ^1.2.0
+  cached_network_image: ^3.4.1
+  shared_preferences: ^2.2.0
+  intl: ^0.19.0
+
+flutter:
+  uses-material-design: true

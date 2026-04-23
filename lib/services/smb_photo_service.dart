@@ -1,80 +1,203 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import '../models/models.dart';
 
-class SmbServer {
-  final String host;
-  final int port;
-  final String share;
-  final String username;
-  final String password;
-
-  SmbServer({
-    required this.host,
-    required this.port,
-    required this.share,
-    required this.username,
-    required this.password,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'host': host,
-    'port': port,
-    'share': share,
-    'username': username,
-    'password': password,
-  };
-}
-
 class SmbPhotoService {
-  final Ref ref;
-
-  SmbPhotoService(this.ref);
-
-  Future<bool> testConnection(SmbServer server) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    return true;
+  Future<bool> testConnection(SmbConfig config) async {
+    final result = await _runSmbClient(config, 'ls');
+    return result.exitCode == 0;
   }
 
-  Future<List<Album>> getAlbums(SmbServer server) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    return [];
+  Future<List<SmbFileInfo>> listDirectory(SmbConfig config, String path) async {
+    final normalized = _normalizePath(path);
+    final command = normalized.isEmpty || normalized == '\\'
+        ? 'ls'
+        : 'cd "$normalized"; ls';
+    final result = await _runSmbClient(config, command);
+    if (result.exitCode != 0) {
+      throw Exception('SMB list failed: ${result.stderr}');
+    }
+    return _parseLsOutput(result.stdout as String);
   }
 
-  Future<List<MediaItem>> getMediaItems(SmbServer server, String path) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    return [];
+  Future<void> downloadFile(
+    SmbConfig config,
+    String remotePath,
+    String localPath, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final dir = Directory(localPath).parent;
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+
+    final normalizedRemote = remotePath.replaceAll('/', '\\');
+    final process = await Process.start(
+      'smbclient',
+      [
+        '//${config.host}/${config.share}',
+        '-p',
+        '${config.port}',
+        '-U',
+        config.username,
+        '--password=${config.password ?? ''}',
+        '-c',
+        'get "$normalizedRemote" "$localPath"',
+      ],
+    );
+
+    Timer? timer;
+    if (onProgress != null) {
+      timer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+        final file = File(localPath);
+        if (await file.exists()) {
+          final received = await file.length();
+          onProgress(received, 0);
+        }
+      });
+    }
+
+    final exitCode = await process.exitCode;
+    timer?.cancel();
+
+    if (exitCode != 0) {
+      final stderr = await process.stderr.transform(utf8.decoder).join();
+      throw Exception('Download failed: $stderr');
+    }
+  }
+
+  Future<void> uploadFile(
+    SmbConfig config,
+    String localPath,
+    String remotePath, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final file = File(localPath);
+    if (!await file.exists()) {
+      throw Exception('Local file not found: $localPath');
+    }
+    final totalBytes = await file.length();
+
+    final normalizedRemote = remotePath.replaceAll('/', '\\');
+    final process = await Process.start(
+      'smbclient',
+      [
+        '//${config.host}/${config.share}',
+        '-p',
+        '${config.port}',
+        '-U',
+        config.username,
+        '--password=${config.password ?? ''}',
+        '-c',
+        'put "$localPath" "$normalizedRemote"',
+      ],
+    );
+
+    Timer? timer;
+    if (onProgress != null) {
+      timer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+        onProgress(0, totalBytes);
+      });
+    }
+
+    final exitCode = await process.exitCode;
+    timer?.cancel();
+
+    if (exitCode != 0) {
+      final stderr = await process.stderr.transform(utf8.decoder).join();
+      throw Exception('Upload failed: $stderr');
+    }
+  }
+
+  Future<ProcessResult> _runSmbClient(SmbConfig config, String command) async {
+    return Process.run(
+      'smbclient',
+      [
+        '//${config.host}/${config.share}',
+        '-p',
+        '${config.port}',
+        '-U',
+        config.username,
+        '--password=${config.password ?? ''}',
+        '-c',
+        command,
+      ],
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+  }
+
+  String _normalizePath(String path) {
+    if (path.isEmpty || path == '/') return '';
+    return path.replaceAll('/', '\\');
+  }
+
+  List<SmbFileInfo> _parseLsOutput(String output) {
+    final results = <SmbFileInfo>[];
+    final lines = LineSplitter.split(output);
+
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+
+      final reg = RegExp(r'([DA])\s+(\d+)\s+(.+)$');
+      final match = reg.firstMatch(line);
+      if (match == null) continue;
+
+      final type = match.group(1)!;
+      final sizeStr = match.group(2)!;
+      final dateStr = match.group(3)!;
+      final name = line.substring(0, match.start).trim();
+
+      if (name == '.' || name == '..') continue;
+
+      DateTime? modifiedAt;
+      try {
+        modifiedAt = _parseSmbDate(dateStr);
+      } catch (_) {
+        modifiedAt = null;
+      }
+
+      results.add(SmbFileInfo(
+        name: name,
+        isDirectory: type == 'D',
+        size: int.tryParse(sizeStr) ?? 0,
+        modifiedAt: modifiedAt,
+      ));
+    }
+
+    return results;
+  }
+
+  DateTime? _parseSmbDate(String s) {
+    try {
+      final parts = s.trim().split(RegExp(r'\s+'));
+      if (parts.length < 5) return null;
+      final year = int.parse(parts.last);
+      final timeParts = parts[parts.length - 2].split(':');
+      if (timeParts.length != 3) return null;
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+      final second = int.parse(timeParts[2]);
+      final day = int.parse(parts[parts.length - 3]);
+      final month = _monthNameToNumber(parts[parts.length - 4]);
+      if (month == null) return null;
+      return DateTime(year, month, day, hour, minute, second);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int? _monthNameToNumber(String name) {
+    const months = {
+      'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+      'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+    };
+    for (final entry in months.entries) {
+      if (name.toLowerCase().startsWith(entry.key.toLowerCase())) {
+        return entry.value;
+      }
+    }
+    return null;
   }
 }
-
-final smbPhotoServiceProvider = Provider<SmbPhotoService>((ref) {
-  return SmbPhotoService(ref);
-});
-
-final smbServersProvider =
-    StateNotifierProvider<SmbServersNotifier, List<SmbServer>>((ref) {
-      return SmbServersNotifier();
-    });
-
-class SmbServersNotifier extends StateNotifier<List<SmbServer>> {
-  SmbServersNotifier() : super([]);
-
-  void addServer(SmbServer server) {
-    state = [...state, server];
-  }
-
-  void removeServer(int index) {
-    state = [...state]..removeAt(index);
-  }
-}
-
-final selectedSmbIndexProvider = StateProvider<int?>((ref) => null);
-
-final currentSmbAlbumsProvider = FutureProvider<List<Album>>((ref) async {
-  final index = ref.watch(selectedSmbIndexProvider);
-  final servers = ref.watch(smbServersProvider);
-
-  if (index == null || index >= servers.length) return [];
-
-  final service = ref.watch(smbPhotoServiceProvider);
-  return service.getAlbums(servers[index]);
-});

@@ -1,39 +1,50 @@
-import 'package:photo_manager/photo_manager.dart';
+import 'dart:io';
+import 'package:mime/mime.dart';
 import '../models/models.dart';
 
+class _FileStat {
+  final File file;
+  final FileStat stat;
+  _FileStat(this.file, this.stat);
+}
+
 class LocalPhotoService {
-  Future<bool> requestPermission() async {
-    final result = await PhotoManager.requestPermissionExtend();
-    return result.isAuth;
-  }
+  final String rootPath;
+
+  LocalPhotoService(this.rootPath);
 
   Future<List<Album>> getAlbums() async {
-    final albums = await PhotoManager.getAssetPathList(
-      type: RequestType.image,
-      hasAll: true,
-    );
+    final root = Directory(rootPath);
+    if (!await root.exists()) {
+      return [];
+    }
 
-    return Future.wait(
-      albums.map((path) async {
-        final count = await path.assetCountAsync;
-        final firstAsset = count > 0
-            ? (await path.getAssetListRange(start: 0, end: 1)).firstOrNull
-            : null;
+    final albums = <Album>[];
+    await for (final entity in root.list(followLinks: false)) {
+      if (entity is Directory) {
+        final name = entity.path.split(Platform.pathSeparator).last;
+        final count = await _countImageFiles(entity);
         String? coverPath;
-        if (firstAsset != null) {
-          final file = await firstAsset.file;
-          coverPath = file?.path;
+        await for (final file in entity.list(followLinks: false)) {
+          if (file is File && _isImageFile(file.path)) {
+            coverPath = file.path;
+            break;
+          }
         }
-        return Album(
-          id: path.id,
-          name: path.name,
+
+        albums.add(Album(
+          id: entity.path,
+          name: name,
           source: MediaSource.local(),
           coverPath: coverPath,
           count: count,
-          parentPath: null,
-        );
-      }).toList(),
-    );
+          parentPath: rootPath,
+        ));
+      }
+    }
+
+    albums.sort((a, b) => a.name.compareTo(b.name));
+    return albums;
   }
 
   Future<List<MediaItem>> getMediaItems(
@@ -41,26 +52,62 @@ class LocalPhotoService {
     int page = 0,
     int pageSize = 50,
   }) async {
-    final path = await AssetPathEntity.fromId(albumId);
-    if (path == null || pageSize == 0) return [];
+    final dir = Directory(albumId);
+    if (!await dir.exists()) return [];
 
-    final assets = await path.getAssetListPaged(page: page, size: pageSize);
+    final fileStats = <_FileStat>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is File && _isImageFile(entity.path)) {
+        final stat = await entity.stat();
+        fileStats.add(_FileStat(entity, stat));
+      }
+    }
 
-    return Future.wait(
-      assets.map((asset) async {
-        final file = await asset.file;
-        return MediaItem(
-          id: asset.id,
-          name: asset.title ?? '',
-          path: file?.path ?? '',
-          source: MediaSource.local(),
-          mimeType: asset.mimeType ?? 'image/jpeg',
-          size: asset.size.width.toInt() * asset.size.height.toInt(),
-          width: asset.width.toInt(),
-          height: asset.height.toInt(),
-          modifiedAt: asset.modifiedDateTime,
-        );
-      }).toList(),
-    );
+    fileStats.sort((a, b) => b.stat.modified.compareTo(a.stat.modified));
+
+    final start = page * pageSize;
+    if (start >= fileStats.length) return [];
+
+    final end = (start + pageSize).clamp(start, fileStats.length);
+    final pageFiles = fileStats.sublist(start, end);
+
+    return pageFiles.map((fs) {
+      final file = fs.file;
+      final stat = fs.stat;
+      final mimeType = lookupMimeType(file.path) ?? 'image/jpeg';
+      return MediaItem(
+        id: file.path,
+        name: file.path.split(Platform.pathSeparator).last,
+        path: file.path,
+        source: MediaSource.local(),
+        mimeType: mimeType,
+        size: stat.size,
+        width: 0,
+        height: 0,
+        modifiedAt: stat.modified,
+      );
+    }).toList();
+  }
+
+  Future<int> _countImageFiles(Directory dir) async {
+    int count = 0;
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is File && _isImageFile(entity.path)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  bool _isImageFile(String path) {
+    final ext = path.toLowerCase();
+    return ext.endsWith('.jpg') ||
+        ext.endsWith('.jpeg') ||
+        ext.endsWith('.png') ||
+        ext.endsWith('.gif') ||
+        ext.endsWith('.webp') ||
+        ext.endsWith('.bmp') ||
+        ext.endsWith('.heic') ||
+        ext.endsWith('.heif');
   }
 }

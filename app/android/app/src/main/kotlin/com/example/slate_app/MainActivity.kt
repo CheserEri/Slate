@@ -1,4 +1,4 @@
-package com.smbgallery.slate
+package com.example.slate_app
 
 import io.flutter.embedding.android.FlutterActivity
 

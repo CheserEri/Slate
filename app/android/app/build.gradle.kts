@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.smbgallery.slate"
+    namespace = "com.example.slate_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.smbgallery.slate"
+        applicationId = "com.example.slate_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

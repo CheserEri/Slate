@@ -183,44 +183,6 @@ class SmbConfig {
     }
     return map;
   }
-
-  SmbConfig copyWith({
-    String? id,
-    String? name,
-    String? host,
-    int? port,
-    String? share,
-    String? username,
-    String? password,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
-    return SmbConfig(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      host: host ?? this.host,
-      port: port ?? this.port,
-      share: share ?? this.share,
-      username: username ?? this.username,
-      password: password ?? this.password,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
-}
-
-class SmbFileInfo {
-  final String name;
-  final bool isDirectory;
-  final int size;
-  final DateTime? modifiedAt;
-
-  SmbFileInfo({
-    required this.name,
-    required this.isDirectory,
-    required this.size,
-    this.modifiedAt,
-  });
 }
 
 enum TransferStatus { pending, running, paused, done, failed }
@@ -235,6 +197,7 @@ class TransferTask {
   final String localPath;
   final int totalBytes;
   final int writtenBytes;
+  final double progress;
   final TransferStatus status;
   final String? errorMessage;
   final DateTime createdAt;
@@ -248,56 +211,33 @@ class TransferTask {
     required this.localPath,
     required this.totalBytes,
     required this.writtenBytes,
+    required this.progress,
     required this.status,
     this.errorMessage,
     required this.createdAt,
     required this.updatedAt,
   });
 
-  double get progress => totalBytes > 0 ? writtenBytes / totalBytes : 0;
-
-  TransferTask copyWith({
-    String? id,
-    String? serverId,
-    TransferType? transferType,
-    String? remotePath,
-    String? localPath,
-    int? totalBytes,
-    int? writtenBytes,
-    TransferStatus? status,
-    String? errorMessage,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
+  factory TransferTask.fromJson(Map<String, dynamic> json) {
     return TransferTask(
-      id: id ?? this.id,
-      serverId: serverId ?? this.serverId,
-      transferType: transferType ?? this.transferType,
-      remotePath: remotePath ?? this.remotePath,
-      localPath: localPath ?? this.localPath,
-      totalBytes: totalBytes ?? this.totalBytes,
-      writtenBytes: writtenBytes ?? this.writtenBytes,
-      status: status ?? this.status,
-      errorMessage: errorMessage ?? this.errorMessage,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
+      id: json['id'] as String,
+      serverId: json['server_id'] as String,
+      transferType: TransferType.values.firstWhere(
+        (e) => e.name == json['transfer_type'],
+        orElse: () => TransferType.download,
+      ),
+      remotePath: json['remote_path'] as String,
+      localPath: json['local_path'] as String,
+      totalBytes: json['total_bytes'] as int,
+      writtenBytes: json['written_bytes'] as int,
+      progress: (json['progress'] as num).toDouble(),
+      status: TransferStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => TransferStatus.pending,
+      ),
+      errorMessage: json['error_message'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'server_id': serverId,
-      'transfer_type': transferType.name,
-      'remote_path': remotePath,
-      'local_path': localPath,
-      'total_bytes': totalBytes,
-      'written_bytes': writtenBytes,
-      'progress': progress,
-      'status': status.name,
-      'error_message': errorMessage,
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt.toIso8601String(),
-    };
   }
 }
