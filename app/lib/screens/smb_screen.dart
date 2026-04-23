@@ -50,8 +50,10 @@ class SmbScreen extends ConsumerWidget {
     final hostCtrl = TextEditingController();
     final portCtrl = TextEditingController(text: '445');
     final shareCtrl = TextEditingController();
+    final rootPathCtrl = TextEditingController();
     final userCtrl = TextEditingController(text: 'guest');
     final passCtrl = TextEditingController();
+    final domainCtrl = TextEditingController();
 
     showDialog(
       context: context,
@@ -65,8 +67,10 @@ class SmbScreen extends ConsumerWidget {
               TextField(controller: hostCtrl, decoration: const InputDecoration(labelText: '主机')),
               TextField(controller: portCtrl, decoration: const InputDecoration(labelText: '端口'), keyboardType: TextInputType.number),
               TextField(controller: shareCtrl, decoration: const InputDecoration(labelText: '共享名')),
+              TextField(controller: rootPathCtrl, decoration: const InputDecoration(labelText: '根路径 (可选)', hintText: '/')),
               TextField(controller: userCtrl, decoration: const InputDecoration(labelText: '用户名')),
               TextField(controller: passCtrl, decoration: const InputDecoration(labelText: '密码'), obscureText: true),
+              TextField(controller: domainCtrl, decoration: const InputDecoration(labelText: '域 (可选)')),
             ],
           ),
         ),
@@ -80,8 +84,10 @@ class SmbScreen extends ConsumerWidget {
                 host: hostCtrl.text,
                 port: int.tryParse(portCtrl.text) ?? 445,
                 share: shareCtrl.text,
+                rootPath: rootPathCtrl.text,
                 username: userCtrl.text,
                 password: passCtrl.text,
+                domain: domainCtrl.text,
                 createdAt: DateTime.now(),
                 updatedAt: DateTime.now(),
               );

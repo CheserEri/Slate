@@ -112,8 +112,10 @@ class ApiRouter {
         host: json['host'] as String,
         port: (json['port'] as num?)?.toInt() ?? 445,
         share: json['share'] as String,
+        rootPath: json['root_path'] as String? ?? '',
         username: (json['username'] as String?) ?? 'guest',
         password: json['password'] as String?,
+        domain: json['domain'] as String? ?? '',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );

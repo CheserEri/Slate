@@ -136,8 +136,10 @@ class SmbConfig {
   final String host;
   final int port;
   final String share;
+  final String rootPath;
   final String username;
   final String? password;
+  final String domain;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -147,8 +149,10 @@ class SmbConfig {
     required this.host,
     required this.port,
     required this.share,
+    this.rootPath = '',
     required this.username,
     this.password,
+    this.domain = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -160,8 +164,10 @@ class SmbConfig {
       host: json['host'] as String,
       port: json['port'] as int,
       share: json['share'] as String,
+      rootPath: json['root_path'] as String? ?? '',
       username: json['username'] as String,
       password: json['password'] as String?,
+      domain: json['domain'] as String? ?? '',
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -174,7 +180,9 @@ class SmbConfig {
       'host': host,
       'port': port,
       'share': share,
+      'root_path': rootPath,
       'username': username,
+      'domain': domain,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -182,6 +190,34 @@ class SmbConfig {
       map['password'] = password;
     }
     return map;
+  }
+
+  SmbConfig copyWith({
+    String? id,
+    String? name,
+    String? host,
+    int? port,
+    String? share,
+    String? rootPath,
+    String? username,
+    String? password,
+    String? domain,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return SmbConfig(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      host: host ?? this.host,
+      port: port ?? this.port,
+      share: share ?? this.share,
+      rootPath: rootPath ?? this.rootPath,
+      username: username ?? this.username,
+      password: password ?? this.password,
+      domain: domain ?? this.domain,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 }
 
