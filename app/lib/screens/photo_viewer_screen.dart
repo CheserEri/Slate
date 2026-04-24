@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../providers/transfer_provider.dart';
 import '../providers/smb_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/glass_container.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:exif/exif.dart' as exif_pkg;
 import 'dart:typed_data';
@@ -29,13 +30,20 @@ class PhotoViewerScreen extends StatefulWidget {
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   late final PageController _pageController;
   late int _currentIndex;
-  bool _showUI = true;
+  bool _showUI = false;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
+    // 延迟显示 UI 提示
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) setState(() => _showUI = true);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _showUI = false);
+      });
+    });
   }
 
   @override
@@ -66,65 +74,100 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                   maxScale: 4.0,
                   child: Center(
                     child: widget.isRemote
-                        ? _RemotePhotoViewer(serverId: _extractServerId(item.path), remotePath: item.path, name: item.name)
+                        ? _RemotePhotoViewer(
+                            serverId: _extractServerId(item.path),
+                            remotePath: item.path,
+                            name: item.name)
                         : Image.file(
                             File(item.path),
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => Container(
-                              color: Colors.grey[900],
-                              child: const Icon(Icons.broken_image, size: 64, color: Colors.white30),
+                              color: Colors.black,
+                              child: const Icon(Icons.broken_image,
+                                  size: 64, color: const Color(0x1FFFFFFF)),
                             ),
                           ),
                   ),
                 );
               },
             ),
+            // 渐变遮罩（只在 UI 显示时）
             AnimatedOpacity(
               opacity: _showUI ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 200),
+              duration: const Duration(milliseconds: 250),
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.7),
+                      Colors.black.withValues(alpha: 0.6),
                       Colors.transparent,
                       Colors.transparent,
                       Colors.black.withValues(alpha: 0.7),
                     ],
+                    stops: const [0.0, 0.2, 0.7, 1.0],
                   ),
                 ),
               ),
             ),
-            if (_showUI)
-              SafeArea(
+            // UI 层
+            AnimatedOpacity(
+              opacity: _showUI ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: SafeArea(
                 child: Column(
                   children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
+                    // 顶部栏（毛玻璃）
+                    GlassContainer(
+                      margin: const EdgeInsets.all(12),
+                      borderRadius: BorderRadius.circular(16),
+                      blur: 20,
+                      tint: Colors.black.withValues(alpha: 0.4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back,
+                                  color: Colors.white),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            Expanded(
+                              child: Text(
+                                '${_currentIndex + 1} / ${widget.photos.length}',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            const SizedBox(width: 48),
+                          ],
                         ),
-                        Expanded(
-                          child: Text(
-                            '${_currentIndex + 1} / ${widget.photos.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 16),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(width: 48),
-                      ],
+                      ),
                     ),
                     const Spacer(),
-                    _BottomActionBar(
-                      photo: photo,
-                      isRemote: widget.isRemote,
+                    // 底部操作栏（毛玻璃）
+                    GlassContainer(
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      borderRadius: BorderRadius.circular(24),
+                      blur: 24,
+                      tint: Colors.black.withValues(alpha: 0.5),
+                      child: SafeArea(
+                        top: false,
+                        child: _BottomActionBar(
+                          photo: photo,
+                          isRemote: widget.isRemote,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -142,8 +185,8 @@ class _BottomActionBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final servers = ref.watch(smbServersProvider).valueOrNull ?? [];
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -189,7 +232,8 @@ class _BottomActionBar extends ConsumerWidget {
     try {
       if (isRemote) {
         final serverId = _extractServerId(photo.path);
-        final url = await ApiService().previewSmbFileUrl(serverId, photo.path);
+        final url =
+            await ApiService().previewSmbFileUrl(serverId, photo.path);
         await Share.share(url, subject: photo.name);
       } else {
         await Share.shareXFiles([XFile(photo.path)], text: photo.name);
@@ -209,10 +253,12 @@ class _BottomActionBar extends ConsumerWidget {
       final dir = Directory('/storage/emulated/0/Download/Slate');
       await dir.create(recursive: true);
       final savePath = '${dir.path}/${photo.name}';
-      await ApiService().downloadSmbFileToLocal(serverId, photo.path, savePath);
+      await ApiService()
+          .downloadSmbFileToLocal(serverId, photo.path, savePath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已保存到 Downloads/Slate/${photo.name}')),
+          SnackBar(
+              content: Text('已保存到 Downloads/Slate/${photo.name}')),
         );
       }
     } catch (e) {
@@ -224,12 +270,10 @@ class _BottomActionBar extends ConsumerWidget {
     }
   }
 
-
-
   void _showInfo(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.grey[900],
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => _ExifInfoSheet(photo: photo, isRemote: isRemote),
     );
@@ -251,13 +295,26 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
-        ],
+      child: AnimatedScale(
+        scale: 1.0,
+        duration: const Duration(milliseconds: 100),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(height: 6),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 11, fontWeight: FontWeight.w500)),
+          ],
+        ),
       ),
     );
   }
@@ -267,7 +324,9 @@ class _RemotePhotoViewer extends StatefulWidget {
   final String serverId;
   final String remotePath;
   final String name;
-  const _RemotePhotoViewer({required this.serverId, required this.remotePath, required this.name});
+
+  const _RemotePhotoViewer(
+      {required this.serverId, required this.remotePath, required this.name});
 
   @override
   State<_RemotePhotoViewer> createState() => _RemotePhotoViewerState();
@@ -285,8 +344,13 @@ class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
 
   Future<void> _load() async {
     try {
-      final url = await ApiService().previewSmbFileUrl(widget.serverId, widget.remotePath);
-      if (mounted) setState(() { _url = url; _loading = false; });
+      final url = await ApiService()
+          .previewSmbFileUrl(widget.serverId, widget.remotePath);
+      if (mounted)
+        setState(() {
+          _url = url;
+          _loading = false;
+        });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -296,14 +360,19 @@ class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Container(
-        color: Colors.grey[900],
-        child: const Center(child: CircularProgressIndicator()),
+        color: Colors.black,
+        child: const Center(
+            child: CircularProgressIndicator(
+          color: Colors.white,
+          strokeWidth: 2,
+        )),
       );
     }
     if (_url == null) {
       return Container(
-        color: Colors.grey[900],
-        child: const Icon(Icons.broken_image, size: 64, color: Colors.white30),
+        color: Colors.black,
+        child: const Icon(Icons.broken_image,
+            size: 64, color: const Color(0x1FFFFFFF)),
       );
     }
     return Image.network(
@@ -313,13 +382,18 @@ class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
       loadingBuilder: (_, child, progress) {
         if (progress == null) return child;
         return Container(
-          color: Colors.grey[900],
-          child: const Center(child: CircularProgressIndicator()),
+          color: Colors.black,
+          child: const Center(
+              child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          )),
         );
       },
       errorBuilder: (_, __, ___) => Container(
-        color: Colors.grey[900],
-        child: const Icon(Icons.broken_image, size: 64, color: Colors.white30),
+        color: Colors.black,
+        child: const Icon(Icons.broken_image,
+            size: 64, color: const Color(0x1FFFFFFF)),
       ),
     );
   }
@@ -328,6 +402,7 @@ class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
 class _ExifInfoSheet extends StatefulWidget {
   final MediaItem photo;
   final bool isRemote;
+
   const _ExifInfoSheet({required this.photo, required this.isRemote});
 
   @override
@@ -352,10 +427,12 @@ class _ExifInfoSheetState extends State<_ExifInfoSheet> {
         _exif = data.map((k, v) => MapEntry(k, v.toString()));
       } else {
         final serverId = widget.photo.path.split('/').first;
-        final url = await ApiService().previewSmbFileUrl(serverId, widget.photo.path);
+        final url = await ApiService()
+            .previewSmbFileUrl(serverId, widget.photo.path);
         final response = await http.get(Uri.parse(url));
         if (response.statusCode == 200) {
-          final data = await exif_pkg.readExifFromBytes(response.bodyBytes);
+          final data =
+              await exif_pkg.readExifFromBytes(response.bodyBytes);
           _exif = data.map((k, v) => MapEntry(k, v.toString()));
         }
       }
@@ -365,7 +442,8 @@ class _ExifInfoSheetState extends State<_ExifInfoSheet> {
 
   String _formatSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024)
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
   }
 
@@ -377,30 +455,60 @@ class _ExifInfoSheetState extends State<_ExifInfoSheet> {
       minChildSize: 0.3,
       maxChildSize: 0.85,
       builder: (_, controller) {
-        return Container(
-          color: Colors.grey[900],
-          padding: const EdgeInsets.all(16),
-          child: ListView(
-            controller: controller,
-            children: [
-              Text('文件信息', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white)),
-              const SizedBox(height: 12),
-              _InfoRow('名称', widget.photo.name),
-              _InfoRow('路径', widget.photo.path),
-              _InfoRow('大小', _formatSize(widget.photo.size)),
-              _InfoRow('类型', widget.photo.mimeType),
-              _InfoRow('时间', widget.photo.modifiedAt.toString()),
-              _InfoRow('分辨率', '${widget.photo.width} x ${widget.photo.height}'),
-              const SizedBox(height: 16),
-              if (_loading)
-                const Center(child: CircularProgressIndicator())
-              else if (_exif != null && _exif!.isNotEmpty) ...[
-                Text('EXIF', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.white)),
-                const SizedBox(height: 8),
-                ..._exif!.entries.take(20).map((e) => _InfoRow(e.key, e.value)),
-              ] else
-                const Text('无 EXIF 数据', style: TextStyle(color: Colors.grey)),
-            ],
+        return GlassContainer(
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(24)),
+          blur: 30,
+          tint: const Color(0xFF0F172A).withValues(alpha: 0.9),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            child: ListView(
+              controller: controller,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('文件信息',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(color: Colors.white)),
+                const SizedBox(height: 16),
+                _InfoRow('名称', widget.photo.name),
+                _InfoRow('路径', widget.photo.path),
+                _InfoRow('大小', _formatSize(widget.photo.size)),
+                _InfoRow('类型', widget.photo.mimeType),
+                _InfoRow('时间', widget.photo.modifiedAt.toString()),
+                _InfoRow('分辨率',
+                    '${widget.photo.width} x ${widget.photo.height}'),
+                const SizedBox(height: 20),
+                if (_loading)
+                  const Center(
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                else if (_exif != null && _exif!.isNotEmpty) ...[
+                  Text('EXIF',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(color: Colors.white)),
+                  const SizedBox(height: 10),
+                  ..._exif!.entries
+                      .take(20)
+                      .map((e) => _InfoRow(e.key, e.value)),
+                ] else
+                  const Text('无 EXIF 数据',
+                      style: TextStyle(color: Colors.white38)),
+              ],
+            ),
           ),
         );
       },
@@ -415,21 +523,26 @@ String _extractServerId(String path) {
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
+
   const _InfoRow(this.label, this.value);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 100,
-            child: Text('$label:', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+            child: Text('$label:',
+                style: const TextStyle(
+                    color: Color(0x99FFFFFF), fontSize: 13)),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13)),
+            child: Text(value,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 13)),
           ),
         ],
       ),

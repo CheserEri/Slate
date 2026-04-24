@@ -45,6 +45,12 @@ class TransfersNotifier extends StateNotifier<AsyncValue<List<TransferTask>>> {
     await load();
   }
 
+  Future<void> clearCompleted() async {
+    final tasks = state.valueOrNull ?? [];
+    final active = tasks.where((t) => t.status != TransferStatus.done && t.status != TransferStatus.failed).toList();
+    state = AsyncValue.data(active);
+  }
+
   Future<void> backupPhotos(String serverId, List<String> localPaths, String remoteDir) async {
     for (final path in localPaths) {
       try {

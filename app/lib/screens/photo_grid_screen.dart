@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/models.dart';
 import '../providers/album_provider.dart';
-import '../services/api_service.dart';
 import '../providers/smb_provider.dart';
+import '../services/api_service.dart';
+import '../widgets/glass_container.dart';
 import 'photo_viewer_screen.dart';
 
-class PhotoGridScreen extends ConsumerWidget {
+class PhotoGridScreen extends ConsumerStatefulWidget {
   final String albumId;
   final String albumName;
   final bool isLocal;
@@ -19,26 +21,64 @@ class PhotoGridScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final itemsAsync = isLocal
-        ? ref.watch(albumItemsProvider(albumId))
-        : ref.watch(smbItemsProvider(albumId));
+  ConsumerState<PhotoGridScreen> createState() => _PhotoGridScreenState();
+}
+
+class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // FutureProvider auto-loads on watch, no need to manually trigger
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final itemsAsync = widget.isLocal
+        ? ref.watch(albumItemsProvider(widget.albumId))
+        : ref.watch(smbItemsProvider(widget.albumId));
 
     return Scaffold(
-      appBar: AppBar(title: Text(albumName)),
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          widget.albumName,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
       body: itemsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('加载失败: $err')),
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+        error: (err, _) => Center(
+          child: Text('加载失败: $err', style: const TextStyle(color: Colors.white70)),
+        ),
         data: (items) {
           if (items.isEmpty) {
-            return const Center(child: Text('暂无照片'));
+            return const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.photo_library_outlined, size: 64, color: Colors.white24),
+                  SizedBox(height: 16),
+                  Text('暂无照片', style: TextStyle(color: Colors.white38)),
+                ],
+              ),
+            );
           }
           return GridView.builder(
-            padding: const EdgeInsets.all(2),
+            padding: const EdgeInsets.fromLTRB(16, 100, 16, 120),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              crossAxisSpacing: 2,
-              mainAxisSpacing: 2,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
             ),
             itemCount: items.length,
             itemBuilder: (context, index) {
@@ -51,30 +91,34 @@ class PhotoGridScreen extends ConsumerWidget {
                       builder: (_) => PhotoViewerScreen(
                         photos: items,
                         initialIndex: index,
-                        isRemote: !isLocal,
+                        isRemote: !widget.isLocal,
                       ),
                     ),
                   );
                 },
-                child: isLocal
-                    ? Image.file(
-                        File(item.path),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _fallback(),
-                      )
-                    : _RemoteImage(serverId: albumId, remotePath: item.path, name: item.name),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: widget.isLocal
+                      ? Image.file(
+                          File(item.path),
+                          fit: BoxFit.cover,
+                          cacheWidth: 400,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: const Color(0xFF1A1A2E),
+                            child: const Icon(Icons.image, color: Colors.white24),
+                          ),
+                        )
+                      : _RemoteImage(
+                          serverId: widget.albumId,
+                          remotePath: item.path,
+                          name: item.name,
+                        ),
+                ),
               );
             },
           );
         },
       ),
-    );
-  }
-
-  Widget _fallback() {
-    return Container(
-      color: Colors.grey[800],
-      child: const Icon(Icons.broken_image, color: Colors.white54),
     );
   }
 }
@@ -83,7 +127,12 @@ class _RemoteImage extends StatefulWidget {
   final String serverId;
   final String remotePath;
   final String name;
-  const _RemoteImage({required this.serverId, required this.remotePath, required this.name});
+
+  const _RemoteImage({
+    required this.serverId,
+    required this.remotePath,
+    required this.name,
+  });
 
   @override
   State<_RemoteImage> createState() => _RemoteImageState();
@@ -117,14 +166,16 @@ class _RemoteImageState extends State<_RemoteImage> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Container(
-        color: Colors.grey[800],
-        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        color: const Color(0xFF1A1A2E),
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+        ),
       );
     }
     if (_url == null) {
       return Container(
-        color: Colors.grey[800],
-        child: const Icon(Icons.broken_image, color: Colors.white54),
+        color: const Color(0xFF1A1A2E),
+        child: const Icon(Icons.broken_image, color: Colors.white24),
       );
     }
     return Image.network(
@@ -134,13 +185,15 @@ class _RemoteImageState extends State<_RemoteImage> {
       loadingBuilder: (_, child, progress) {
         if (progress == null) return child;
         return Container(
-          color: Colors.grey[800],
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          color: const Color(0xFF1A1A2E),
+          child: const Center(
+            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+          ),
         );
       },
       errorBuilder: (_, __, ___) => Container(
-        color: Colors.grey[800],
-        child: const Icon(Icons.broken_image, color: Colors.white54),
+        color: const Color(0xFF1A1A2E),
+        child: const Icon(Icons.broken_image, color: Colors.white24),
       ),
     );
   }
