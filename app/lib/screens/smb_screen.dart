@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/smb_provider.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/animations.dart';
 import 'photo_grid_screen.dart';
 
 class SmbScreen extends ConsumerWidget {
@@ -59,7 +60,7 @@ class SmbScreen extends ConsumerWidget {
                         Icon(Icons.cloud_off, size: 64, color: Colors.white24),
                         SizedBox(height: 16),
                         Text('暂无 SMB 服务器', style: TextStyle(color: Colors.white38)),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         Text('点击右上角添加', style: TextStyle(color: Colors.white24, fontSize: 12)),
                       ],
                     ),
@@ -70,15 +71,17 @@ class SmbScreen extends ConsumerWidget {
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     final server = servers[index];
-                    return StatusCard(
+                    return FadeSlideIn(
+                      index: index,
+                      child: StatusCard(
                       statusColor: const Color(0xFF60A5FA),
                       onTap: () {
                         ref.read(selectedSmbServerProvider.notifier).state = server.id;
                         ref.read(smbCurrentPathProvider.notifier).state = '';
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => PhotoGridScreen(
+                          PageFadeTransition(
+                            child: PhotoGridScreen(
                               albumId: server.id,
                               albumName: server.name,
                               isLocal: false,
@@ -142,8 +145,8 @@ class SmbScreen extends ConsumerWidget {
                                   ref.read(smbCurrentPathProvider.notifier).state = '';
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PhotoGridScreen(
+                                    PageFadeTransition(
+                                      child: PhotoGridScreen(
                                         albumId: server.id,
                                         albumName: server.name,
                                         isLocal: false,
@@ -158,7 +161,8 @@ class SmbScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
-                    );
+                    ),
+                  );
                   },
                   childCount: servers.length,
                 ),
@@ -191,14 +195,22 @@ class SmbScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildField(nameCtrl, '名称'),
-              _buildField(hostCtrl, '主机'),
-              _buildField(portCtrl, '端口', keyboard: TextInputType.number),
-              _buildField(shareCtrl, '共享名'),
-              _buildField(rootPathCtrl, '根路径 (可选)', hint: '/'),
-              _buildField(userCtrl, '用户名'),
-              _buildField(passCtrl, '密码', obscure: true),
-              _buildField(domainCtrl, '域 (可选)'),
+              _buildField(nameCtrl, '名称', hint: '我的NAS'),
+              _buildField(hostCtrl, '主机', hint: '192.168.1.100'),
+              _buildField(portCtrl, '端口', keyboard: TextInputType.number, hint: '445'),
+              _buildField(shareCtrl, '共享名', hint: 'Photos'),
+              _buildField(rootPathCtrl, '根路径 (可选)', hint: '留空表示共享根目录'),
+              _buildField(userCtrl, '用户名', hint: 'admin'),
+              _buildField(passCtrl, '密码', obscure: true, hint: '可选'),
+              _buildField(domainCtrl, '域 (可选)', hint: 'WORKGROUP'),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  '提示：主机可填 IP 或主机名，如 nas.local',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 11),
+                ),
+              ),
             ],
           ),
         ),
@@ -252,14 +264,14 @@ class SmbScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildField(nameCtrl, '名称'),
-              _buildField(hostCtrl, '主机'),
-              _buildField(portCtrl, '端口', keyboard: TextInputType.number),
-              _buildField(shareCtrl, '共享名'),
-              _buildField(rootPathCtrl, '根路径 (可选)', hint: '/'),
-              _buildField(userCtrl, '用户名'),
-              _buildField(passCtrl, '密码', obscure: true),
-              _buildField(domainCtrl, '域 (可选)'),
+              _buildField(nameCtrl, '名称', hint: '我的NAS'),
+              _buildField(hostCtrl, '主机', hint: '192.168.1.100'),
+              _buildField(portCtrl, '端口', keyboard: TextInputType.number, hint: '445'),
+              _buildField(shareCtrl, '共享名', hint: 'Photos'),
+              _buildField(rootPathCtrl, '根路径 (可选)', hint: '留空表示共享根目录'),
+              _buildField(userCtrl, '用户名', hint: 'admin'),
+              _buildField(passCtrl, '密码', obscure: true, hint: '可选'),
+              _buildField(domainCtrl, '域 (可选)', hint: 'WORKGROUP'),
             ],
           ),
         ),

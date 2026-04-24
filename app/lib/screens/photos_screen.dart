@@ -10,6 +10,7 @@ import '../providers/smb_provider.dart';
 import '../providers/transfer_provider.dart';
 import '../services/photo_service.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/animations.dart';
 import 'photo_viewer_screen.dart';
 
 class PhotosScreen extends ConsumerStatefulWidget {
@@ -200,8 +201,8 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
     final index = photos.indexWhere((p) => p.id == initial.id);
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => PhotoViewerScreen(
+      PageFadeTransition(
+        child: PhotoViewerScreen(
           photos: photos,
           initialIndex: index,
         ),
@@ -342,12 +343,13 @@ class _PhotoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return BounceTap(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
+      child: PhotoFadeIn(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Image.file(
@@ -388,7 +390,8 @@ class _PhotoTile extends StatelessWidget {
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../providers/album_provider.dart';
 import '../providers/smb_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/animations.dart';
 import 'photo_viewer_screen.dart';
 
 class PhotoGridScreen extends ConsumerStatefulWidget {
@@ -83,12 +84,12 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
-              return GestureDetector(
+              return BounceTap(
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => PhotoViewerScreen(
+                    PageFadeTransition(
+                      child: PhotoViewerScreen(
                         photos: items,
                         initialIndex: index,
                         isRemote: !widget.isLocal,
@@ -108,11 +109,13 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
                             child: const Icon(Icons.image, color: Colors.white24),
                           ),
                         )
-                      : _RemoteImage(
+                      : PhotoFadeIn(
+                        child: _RemoteImage(
                           serverId: widget.albumId,
                           remotePath: item.path,
                           name: item.name,
                         ),
+                      ),
                 ),
               );
             },

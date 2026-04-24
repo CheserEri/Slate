@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/album_provider.dart';
 import '../providers/smb_provider.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/animations.dart';
 import 'photo_grid_screen.dart';
 
 class AlbumsScreen extends ConsumerWidget {
@@ -83,8 +84,8 @@ class AlbumsScreen extends ConsumerWidget {
                       onTap: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => PhotoGridScreen(
+                          PageFadeTransition(
+                            child: PhotoGridScreen(
                               albumId: album.id,
                               albumName: album.name,
                               isLocal: true,
@@ -170,8 +171,8 @@ class AlbumsScreen extends ConsumerWidget {
                           ref.read(smbCurrentPathProvider.notifier).state = '';
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => PhotoGridScreen(
+                            PageFadeTransition(
+                              child: PhotoGridScreen(
                                 albumId: server.id,
                                 albumName: server.name,
                                 isLocal: false,
@@ -211,7 +212,7 @@ class _AlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return BounceTap(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(

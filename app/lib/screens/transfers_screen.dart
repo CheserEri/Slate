@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/transfer_provider.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/animations.dart';
 
 class TransfersScreen extends ConsumerWidget {
   const TransfersScreen({super.key});
@@ -74,8 +75,10 @@ class TransfersScreen extends ConsumerWidget {
                         ? task.writtenBytes / (task.totalBytes > 0 ? task.totalBytes : 1)
                         : 0.0;
 
-                    return StatusCard(
-                      statusColor: statusColor,
+                    return FadeSlideIn(
+                      index: index,
+                      child: StatusCard(
+                        statusColor: statusColor,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         child: Column(
@@ -134,6 +137,7 @@ class TransfersScreen extends ConsumerWidget {
                             ),
                           ],
                         ),
+                      ),
                       ),
                     );
                   },
