@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
@@ -5,6 +6,7 @@ import 'package:shelf_router/shelf_router.dart';
 import '../models/models.dart';
 import '../services/local_photo_service.dart';
 import '../services/smb_photo_service.dart';
+import '../services/smb_probe_parser.dart';
 import '../services/transfer_service.dart';
 import '../services/persistent_store.dart';
 
@@ -41,6 +43,9 @@ class ApiRouter {
     router.get('/smb/servers/<id>', _getSmbServer);
     router.delete('/smb/servers/<id>', _deleteSmbServer);
     router.post('/smb/servers/<id>/connect', _testSmbConnection);
+    router.post('/smb/probe/connect', _probeSmbConnection);
+    router.post('/smb/probe/shares', _probeSmbShares);
+    router.post('/smb/probe/directories', _probeSmbDirectories);
     router.get('/smb/servers/<id>/albums', _getSmbAlbums);
     router.get('/smb/servers/<id>/items', _getSmbItems);
     router.post('/smb/servers/<id>/download', _downloadSmbFile);
@@ -48,7 +53,7 @@ class ApiRouter {
     router.put('/smb/servers/<id>', _updateSmbServer);
     router.get('/smb/servers/<id>/preview', _previewSmbFile);
 
-    router.get('/health', _healthCheck);
+    router.get('/health', _health);
     router.get('/transfers', _getTransfers);
     router.delete('/transfers/<id>', _cancelTransfer);
     router.post('/transfers/<id>/pause', _pauseTransfer);
@@ -230,6 +235,64 @@ class ApiRouter {
     } catch (e) {
       return Response.ok(
         jsonEncode({'connected': false, 'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _probeSmbConnection(Request req) async {
+    try {
+      final json = await _readJson(req);
+      final config = _configFromJson(json, requireShare: false);
+      final success = config.share.isEmpty
+          ? (await smbService.listShares(config)).isNotEmpty
+          : await smbService.testConnection(config);
+      return Response.ok(
+        jsonEncode({'connected': success}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.ok(
+        jsonEncode({'connected': false, 'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _probeSmbShares(Request req) async {
+    try {
+      final json = await _readJson(req);
+      final config = _configFromJson(json, requireShare: false);
+      final shares = await smbService.listShares(config);
+      return Response.ok(
+        jsonEncode(shares),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  Future<Response> _probeSmbDirectories(Request req) async {
+    try {
+      final json = await _readJson(req);
+      final config = _configFromJson(json, requireShare: true);
+      final path = normalizeRelativeSmbPath(json['path'] as String? ?? '');
+      final files = await smbService.listDirectory(config, path);
+      final directories = files
+          .where((f) => f.isDirectory)
+          .map((f) => f.name)
+          .toList();
+      return Response.ok(
+        jsonEncode(directories),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},
       );
     }
@@ -457,6 +520,35 @@ class ApiRouter {
     return Response.ok(
       jsonEncode({'success': true}),
       headers: {'content-type': 'application/json'},
+    );
+  }
+
+  Future<Map<String, dynamic>> _readJson(Request req) async {
+    final body = await req.readAsString();
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
+  SmbConfig _configFromJson(Map<String, dynamic> json, {required bool requireShare}) {
+    final host = (json['host'] as String? ?? '').trim();
+    final share = (json['share'] as String? ?? '').trim();
+    if (host.isEmpty) {
+      throw Exception('host is required');
+    }
+    if (requireShare && share.isEmpty) {
+      throw Exception('share is required');
+    }
+    return SmbConfig(
+      id: 'probe',
+      name: (json['name'] as String? ?? host).trim(),
+      host: host,
+      port: (json['port'] as num?)?.toInt() ?? 445,
+      share: share,
+      rootPath: normalizeRelativeSmbPath(json['root_path'] as String? ?? ''),
+      username: (json['username'] as String? ?? 'guest').trim(),
+      password: json['password'] as String?,
+      domain: (json['domain'] as String? ?? '').trim(),
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
   }
 

@@ -12,6 +12,9 @@ class ApiConstants {
   static String get smbServers => '$baseUrl/smb/servers';
   static String smbServer(String id) => '$baseUrl/smb/servers/$id';
   static String smbConnect(String id) => '$baseUrl/smb/servers/$id/connect';
+  static String get smbProbeConnect => '$baseUrl/smb/probe/connect';
+  static String get smbProbeShares => '$baseUrl/smb/probe/shares';
+  static String get smbProbeDirectories => '$baseUrl/smb/probe/directories';
   static String smbAlbums(String id) => '$baseUrl/smb/servers/$id/albums';
   static String smbItems(String id) => '$baseUrl/smb/servers/$id/items';
   static String smbDownload(String id) => '$baseUrl/smb/servers/$id/download';

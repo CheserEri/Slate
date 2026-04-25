@@ -266,6 +266,28 @@ class TransferTask {
     required this.updatedAt,
   });
 
+  factory TransferTask.fromJson(Map<String, dynamic> json) {
+    return TransferTask(
+      id: json['id'] as String,
+      serverId: json['server_id'] as String,
+      transferType: TransferType.values.firstWhere(
+        (e) => e.name == json['transfer_type'],
+        orElse: () => TransferType.download,
+      ),
+      remotePath: json['remote_path'] as String,
+      localPath: json['local_path'] as String,
+      totalBytes: json['total_bytes'] as int,
+      writtenBytes: json['written_bytes'] as int,
+      status: TransferStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => TransferStatus.pending,
+      ),
+      errorMessage: json['error_message'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+    );
+  }
+
   double get progress => totalBytes > 0 ? writtenBytes / totalBytes : 0;
 
   TransferTask copyWith({

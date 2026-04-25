@@ -53,6 +53,77 @@ class ApiService {
     return body['connected'] == true;
   }
 
+  Future<bool> testSmbDraftConnection({
+    required String host,
+    required int port,
+    required String share,
+    required String username,
+    String? password,
+    String domain = '',
+  }) async {
+    final response = await http.post(
+      Uri.parse(ApiConstants.smbProbeConnect),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'host': host,
+        'port': port,
+        'share': share,
+        'username': username,
+        'password': password,
+        'domain': domain,
+      }),
+    );
+    if (response.statusCode != 200) return false;
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return body['connected'] == true;
+  }
+
+  Future<List<String>> probeSmbShares({
+    required String host,
+    required int port,
+    required String username,
+    String? password,
+    String domain = '',
+  }) async {
+    final response = await http.post(
+      Uri.parse(ApiConstants.smbProbeShares),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'host': host,
+        'port': port,
+        'username': username,
+        'password': password,
+        'domain': domain,
+      }),
+    );
+    return _parseStringList(response);
+  }
+
+  Future<List<String>> probeSmbDirectories({
+    required String host,
+    required int port,
+    required String share,
+    required String username,
+    String? password,
+    String domain = '',
+    String path = '',
+  }) async {
+    final response = await http.post(
+      Uri.parse(ApiConstants.smbProbeDirectories),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'host': host,
+        'port': port,
+        'share': share,
+        'username': username,
+        'password': password,
+        'domain': domain,
+        'path': path,
+      }),
+    );
+    return _parseStringList(response);
+  }
+
   Future<void> deleteSmbServer(String id) async {
     final response = await http.delete(Uri.parse(ApiConstants.smbServer(id)));
     if (response.statusCode != 200) {
@@ -174,6 +245,14 @@ class ApiService {
     }
     final list = jsonDecode(response.body) as List<dynamic>;
     return list.map((e) => fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  List<String> _parseStringList(http.Response response) {
+    if (response.statusCode != 200) {
+      throw ApiException('Request failed', statusCode: response.statusCode);
+    }
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list.map((e) => e.toString()).toList();
   }
 
   T _parseSingle<T>(

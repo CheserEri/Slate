@@ -2,11 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../models/models.dart';
+import 'smb_probe_parser.dart';
 
 class SmbPhotoService {
   Future<bool> testConnection(SmbConfig config) async {
     final result = await _runSmbClient(config, 'ls');
     return result.exitCode == 0;
+  }
+
+  Future<List<String>> listShares(SmbConfig config) async {
+    final result = await _runSmbList(config);
+    if (result.exitCode != 0) {
+      throw Exception('SMB share probe failed: ${result.stderr}');
+    }
+    return parseDiskShares(result.stdout as String);
   }
 
   Future<List<SmbFileInfo>> listDirectory(SmbConfig config, String path) async {
@@ -119,17 +128,19 @@ class SmbPhotoService {
     }
   }
 
-  Future<ProcessResult> _runSmbClient(SmbConfig config, String command) async {
+  Future<ProcessResult> _runSmbList(SmbConfig config) {
     final args = <String>[
-      '//${config.host}/${config.share}',
+      '-g',
+      '-L',
+      config.host,
       '-p',
       '${config.port}',
       '-U',
-      config.username,
-      '--password=${config.password ?? ''}',
-      '-c',
-      command,
+      _formatUser(config),
     ];
+    if (config.password == null || config.password!.isEmpty) {
+      args.add('-N');
+    }
     if (config.domain.isNotEmpty) {
       args.addAll(['-W', config.domain]);
     }
@@ -141,9 +152,38 @@ class SmbPhotoService {
     );
   }
 
+  Future<ProcessResult> _runSmbClient(SmbConfig config, String command) async {
+    final args = <String>[
+      '//${config.host}/${config.share}',
+      '-p',
+      '${config.port}',
+      '-U',
+      _formatUser(config),
+      '-c',
+      command,
+    ];
+    if (config.password == null || config.password!.isEmpty) {
+      args.add('-N');
+    }
+    if (config.domain.isNotEmpty) {
+      args.addAll(['-W', config.domain]);
+    }
+    return Process.run(
+      'smbclient',
+      args,
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+  }
+
+  String _formatUser(SmbConfig config) {
+    final user = config.username.trim().isEmpty ? 'guest' : config.username.trim();
+    final password = config.password ?? '';
+    return '$user%$password';
+  }
+
   String _normalizePath(String path) {
-    if (path.isEmpty || path == '/') return '';
-    return path.replaceAll('/', '\\');
+    return normalizeRelativeSmbPath(path).replaceAll('/', '\\');
   }
 
   String _effectivePath(SmbConfig config, String path) {
