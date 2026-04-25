@@ -3,6 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 
+class BackupResult {
+  final int successCount;
+  final int failedCount;
+
+  const BackupResult({required this.successCount, required this.failedCount});
+
+  bool get allSucceeded => failedCount == 0;
+  bool get allFailed => successCount == 0 && failedCount > 0;
+}
+
 final transfersProvider = StateNotifierProvider<TransfersNotifier, AsyncValue<List<TransferTask>>>(
   (ref) => TransfersNotifier(),
 );
@@ -51,15 +61,21 @@ class TransfersNotifier extends StateNotifier<AsyncValue<List<TransferTask>>> {
     state = AsyncValue.data(active);
   }
 
-  Future<void> backupPhotos(String serverId, List<String> localPaths, String remoteDir) async {
+  Future<BackupResult> backupPhotos(String serverId, List<String> localPaths, String remoteDir) async {
+    var successCount = 0;
+    var failedCount = 0;
+
     for (final path in localPaths) {
       try {
         await ApiService().uploadSmbFile(serverId, path, remoteDir: remoteDir);
+        successCount += 1;
       } catch (_) {
-        // continue with next
+        failedCount += 1;
       }
     }
+
     await load();
+    return BackupResult(successCount: successCount, failedCount: failedCount);
   }
 }
 

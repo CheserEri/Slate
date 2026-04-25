@@ -221,21 +221,30 @@ class SmbScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () async {
-              final config = SmbConfig(
-                id: '',
-                name: nameCtrl.text,
-                host: hostCtrl.text,
-                port: int.tryParse(portCtrl.text) ?? 445,
-                share: shareCtrl.text,
-                rootPath: rootPathCtrl.text,
-                username: userCtrl.text,
-                password: passCtrl.text.isEmpty ? null : passCtrl.text,
-                domain: domainCtrl.text,
-                createdAt: DateTime.now(),
-                updatedAt: DateTime.now(),
-              );
-              await ref.read(smbServersProvider.notifier).addServer(config);
-              if (ctx.mounted) Navigator.pop(ctx);
+              try {
+                final config = SmbConfig(
+                  id: '',
+                  name: nameCtrl.text,
+                  host: hostCtrl.text,
+                  port: int.tryParse(portCtrl.text) ?? 445,
+                  share: shareCtrl.text,
+                  rootPath: rootPathCtrl.text,
+                  username: userCtrl.text,
+                  password: passCtrl.text.isEmpty ? null : passCtrl.text,
+                  domain: domainCtrl.text,
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                );
+                await ref.read(smbServersProvider.notifier).addServer(config);
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  _showMessage(context, 'SMB 服务器已添加');
+                }
+              } catch (_) {
+                if (ctx.mounted) {
+                  _showMessage(context, '添加失败，请检查后端连接或服务器配置', isError: true);
+                }
+              }
             },
             child: const Text('添加'),
           ),
@@ -282,19 +291,28 @@ class SmbScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () async {
-              final updated = server.copyWith(
-                name: nameCtrl.text,
-                host: hostCtrl.text,
-                port: int.tryParse(portCtrl.text) ?? 445,
-                share: shareCtrl.text,
-                rootPath: rootPathCtrl.text,
-                username: userCtrl.text,
-                password: passCtrl.text.isEmpty ? null : passCtrl.text,
-                domain: domainCtrl.text,
-                updatedAt: DateTime.now(),
-              );
-              await ref.read(smbServersProvider.notifier).updateServer(server.id, updated);
-              if (ctx.mounted) Navigator.pop(ctx);
+              try {
+                final updated = server.copyWith(
+                  name: nameCtrl.text,
+                  host: hostCtrl.text,
+                  port: int.tryParse(portCtrl.text) ?? 445,
+                  share: shareCtrl.text,
+                  rootPath: rootPathCtrl.text,
+                  username: userCtrl.text,
+                  password: passCtrl.text.isEmpty ? null : passCtrl.text,
+                  domain: domainCtrl.text,
+                  updatedAt: DateTime.now(),
+                );
+                await ref.read(smbServersProvider.notifier).updateServer(server.id, updated);
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  _showMessage(context, 'SMB 服务器已更新');
+                }
+              } catch (_) {
+                if (ctx.mounted) {
+                  _showMessage(context, '保存失败，请检查后端连接或服务器配置', isError: true);
+                }
+              }
             },
             child: const Text('保存'),
           ),
@@ -337,13 +355,21 @@ class SmbScreen extends ConsumerWidget {
   Future<void> _testConnection(BuildContext context, WidgetRef ref, SmbConfig server) async {
     final ok = await ref.read(smbServersProvider.notifier).testConnection(server.id);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ok ? '连接成功' : '连接失败'),
-          backgroundColor: ok ? const Color(0xFF34D399) : const Color(0xFFF87171),
-        ),
+      _showMessage(
+        context,
+        ok ? '连接成功' : '连接失败',
+        isError: !ok,
       );
     }
+  }
+
+  void _showMessage(BuildContext context, String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? const Color(0xFFF87171) : const Color(0xFF34D399),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, WidgetRef ref, SmbConfig server) {
@@ -362,8 +388,17 @@ class SmbScreen extends ConsumerWidget {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF87171)),
             onPressed: () async {
-              await ref.read(smbServersProvider.notifier).deleteServer(server.id);
-              if (ctx.mounted) Navigator.pop(ctx);
+              try {
+                await ref.read(smbServersProvider.notifier).deleteServer(server.id);
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  _showMessage(context, 'SMB 服务器已删除');
+                }
+              } catch (_) {
+                if (ctx.mounted) {
+                  _showMessage(context, '删除失败，请稍后重试', isError: true);
+                }
+              }
             },
             child: const Text('删除'),
           ),

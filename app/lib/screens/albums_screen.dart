@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/album_provider.dart';
 import '../providers/smb_provider.dart';
-import '../widgets/glass_container.dart';
 import '../widgets/animations.dart';
 import 'photo_grid_screen.dart';
 

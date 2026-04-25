@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_provider.dart';
+import '../utils/constants.dart';
 import '../widgets/glass_container.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -73,8 +73,8 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.dns,
                   iconColor: const Color(0xFFFBBF24),
                   title: '后端地址',
-                  subtitle: 'http://localhost:8080',
-                  onTap: () => _showBackendUrlDialog(context, ref),
+                  subtitle: ApiConstants.baseUrl,
+                  onTap: () => _showBackendUrlDialog(context),
                 ),
               ],
             ),
@@ -217,36 +217,32 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _showBackendUrlDialog(BuildContext context, WidgetRef ref) {
-    final ctrl = TextEditingController(text: 'http://localhost:8080');
+  void _showBackendUrlDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF0F172A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('后端地址', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: ctrl,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'http://localhost:8080',
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(
+              ApiConstants.baseUrl,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
             ),
-          ),
+            const SizedBox(height: 12),
+            Text(
+              '当前版本的后端地址在打包时通过 --dart-define=SLATE_BASE_URL 指定。真机请使用局域网 IP，模拟器请使用 10.0.2.2。',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 13, height: 1.4),
+            ),
+          ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消', style: TextStyle(color: Colors.white70)),
-          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('保存'),
+            child: const Text('知道了'),
           ),
         ],
       ),

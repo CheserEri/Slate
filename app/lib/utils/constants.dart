@@ -1,5 +1,11 @@
 class ApiConstants {
-  static const String baseUrl = 'http://10.0.2.2:8080';
+  // Override at build/run time with:
+  // flutter run --dart-define=SLATE_BASE_URL=http://10.0.2.2:8080
+  // flutter build apk --dart-define=SLATE_BASE_URL=http://10.147.20.50:8080
+  static const String baseUrl = String.fromEnvironment(
+    'SLATE_BASE_URL',
+    defaultValue: 'http://10.147.20.50:8080',
+  );
 
   static String get localAlbums => '$baseUrl/local/albums';
   static String localItems(String path) => '$baseUrl/local/albums/$path/items';

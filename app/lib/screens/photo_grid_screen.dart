@@ -1,11 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/models.dart';
 import '../providers/album_provider.dart';
 import '../providers/smb_provider.dart';
 import '../services/api_service.dart';
-import '../widgets/glass_container.dart';
 import '../widgets/animations.dart';
 import 'photo_viewer_screen.dart';
 

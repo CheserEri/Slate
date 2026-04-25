@@ -8,7 +8,6 @@ import '../services/api_service.dart';
 import '../widgets/glass_container.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:exif/exif.dart' as exif_pkg;
-import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 class PhotoViewerScreen extends StatefulWidget {
@@ -217,14 +216,23 @@ class _BottomActionBar extends ConsumerWidget {
     );
   }
 
-  void _backup(BuildContext context, WidgetRef ref, String serverId) {
-    ref.read(transfersProvider.notifier).backupPhotos(
+  Future<void> _backup(BuildContext context, WidgetRef ref, String serverId) async {
+    final result = await ref.read(transfersProvider.notifier).backupPhotos(
           serverId,
           [photo.path],
           '/SlateBackup',
         );
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已加入备份队列')),
+      SnackBar(
+        content: Text(
+          result.allSucceeded
+              ? '已加入备份队列'
+              : result.allFailed
+                  ? '备份失败，请检查 SMB 配置或后端连接'
+                  : '部分备份成功：成功 ${result.successCount}，失败 ${result.failedCount}',
+        ),
+      ),
     );
   }
 

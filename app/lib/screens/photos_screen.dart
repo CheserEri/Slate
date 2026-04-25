@@ -296,8 +296,8 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {
-                        ref.read(transfersProvider.notifier).backupPhotos(
+                      onPressed: () async {
+                        final result = await ref.read(transfersProvider.notifier).backupPhotos(
                               selectedServer!,
                               paths,
                               remoteDir,
@@ -306,10 +306,19 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                             selectedServer;
                         ref.read(defaultBackupPathProvider.notifier).state =
                             remoteDir;
+                        if (!context.mounted) return;
                         Navigator.pop(context);
                         toggleMultiSelect(ref);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已开始备份')),
+                          SnackBar(
+                            content: Text(
+                              result.allSucceeded
+                                  ? '已加入备份队列 ${result.successCount} 项'
+                                  : result.allFailed
+                                      ? '备份失败，请检查 SMB 配置或后端连接'
+                                      : '部分备份已加入队列：成功 ${result.successCount}，失败 ${result.failedCount}',
+                            ),
+                          ),
                         );
                       },
                       child: const Text('开始备份'),
