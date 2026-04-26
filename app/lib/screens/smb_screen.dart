@@ -43,27 +43,34 @@ class SmbScreen extends ConsumerWidget {
             ),
           ),
           serversAsync.when(
-            loading: () => const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator(color: Colors.white)),
+            loading: () => SliverFillRemaining(
+              child: Center(
+                child: EmptyStateWidget(
+                  icon: Icons.cloud_sync,
+                  title: '正在加载...',
+                ),
+              ),
             ),
             error: (err, _) => SliverFillRemaining(
               child: Center(
-                child: Text('加载失败: $err', style: const TextStyle(color: Colors.white70)),
+                child: EmptyStateWidget(
+                  icon: Icons.error_outline,
+                  title: '加载失败',
+                  subtitle: err.toString(),
+                ),
               ),
             ),
             data: (servers) {
               if (servers.isEmpty) {
-                return const SliverFillRemaining(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.cloud_off, size: 64, color: Colors.white24),
-                        SizedBox(height: 16),
-                        Text('暂无 SMB 服务器', style: TextStyle(color: Colors.white38)),
-                        const SizedBox(height: 8),
-                        Text('点击右上角添加', style: TextStyle(color: Colors.white24, fontSize: 12)),
-                      ],
+                return SliverFillRemaining(
+                  child: EmptyStateWidget(
+                    icon: Icons.cloud_off,
+                    title: '暂无 SMB 服务器',
+                    subtitle: '点击右上角 + 添加服务器',
+                    action: FilledButton.icon(
+                      onPressed: () => _showAddDialog(context, ref),
+                      icon: const Icon(Icons.add),
+                      label: const Text('添加服务器'),
                     ),
                   ),
                 );

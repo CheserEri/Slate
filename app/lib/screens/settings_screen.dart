@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_provider.dart';
-import '../utils/constants.dart';
 import '../widgets/glass_container.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -67,21 +66,6 @@ class SettingsScreen extends ConsumerWidget {
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
           SliverToBoxAdapter(
             child: _SectionCard(
-              title: '网络',
-              children: [
-                _SettingsTile(
-                  icon: Icons.dns,
-                  iconColor: const Color(0xFFFBBF24),
-                  title: '后端地址',
-                  subtitle: ApiConstants.baseUrl,
-                  onTap: () => _showBackendUrlDialog(context),
-                ),
-              ],
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 16)),
-          SliverToBoxAdapter(
-            child: _SectionCard(
               title: '关于',
               children: [
                 Padding(
@@ -101,12 +85,12 @@ class SettingsScreen extends ConsumerWidget {
                           child: Image.asset('assets/branding/slate_logo_ui.png'),
                         ),
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
+                      const SizedBox(width: 16),
+                      const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Slate',
                               style: TextStyle(
                                 color: Colors.white,
@@ -114,11 +98,19 @@ class SettingsScreen extends ConsumerWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: 4),
                             Text(
-                              '本地相册 · SMB 远程相册 · 玻璃拟态设计',
+                              '版本 1.0.0',
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.58),
+                                color: Color(0x99FFFFFF),
+                                fontSize: 13,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              '纯本地 SMB 相册管理',
+                              style: TextStyle(
+                                color: Color(0x66FFFFFF),
                                 fontSize: 12,
                               ),
                             ),
@@ -128,16 +120,10 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const _SettingsTile(
-                  icon: Icons.info_outline,
-                  iconColor: Color(0xFF94A3B8),
-                  title: '版本',
-                  subtitle: '1.1.0',
-                ),
               ],
             ),
           ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
@@ -145,12 +131,12 @@ class SettingsScreen extends ConsumerWidget {
 
   String _themeLabel(ThemeMode mode) {
     switch (mode) {
+      case ThemeMode.system:
+        return '跟随系统';
       case ThemeMode.light:
         return '浅色';
       case ThemeMode.dark:
         return '深色';
-      case ThemeMode.system:
-        return '跟随系统';
     }
   }
 
@@ -158,93 +144,54 @@ class SettingsScreen extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => GlassContainer(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        blur: 30,
-        tint: const Color(0xFF0F172A).withValues(alpha: 0.95),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  '主题模式',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: 16),
-                _ThemeOption(
-                  title: '跟随系统',
-                  icon: Icons.brightness_auto,
-                  isSelected: ref.read(themeProvider) == ThemeMode.system,
-                  onTap: () {
-                    ref.read(themeProvider.notifier).setMode(ThemeMode.system);
-                    Navigator.pop(ctx);
-                  },
-                ),
-                _ThemeOption(
-                  title: '浅色',
-                  icon: Icons.brightness_7,
-                  isSelected: ref.read(themeProvider) == ThemeMode.light,
-                  onTap: () {
-                    ref.read(themeProvider.notifier).setMode(ThemeMode.light);
-                    Navigator.pop(ctx);
-                  },
-                ),
-                _ThemeOption(
-                  title: '深色',
-                  icon: Icons.brightness_2,
-                  isSelected: ref.read(themeProvider) == ThemeMode.dark,
-                  onTap: () {
-                    ref.read(themeProvider.notifier).setMode(ThemeMode.dark);
-                    Navigator.pop(ctx);
-                  },
-                ),
-              ],
-            ),
-          ),
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      ),
-    );
-  }
-
-  void _showBackendUrlDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('后端地址', style: TextStyle(color: Colors.white)),
-        content: Column(
+        padding: const EdgeInsets.all(24),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SelectableText(
-              ApiConstants.baseUrl,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              '当前版本的后端地址在打包时通过 --dart-define=SLATE_BASE_URL 指定。真机请使用局域网 IP，模拟器请使用 10.0.2.2。',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 13, height: 1.4),
+            const SizedBox(height: 20),
+            const Text(
+              '选择主题',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
+            const SizedBox(height: 16),
+            ...ThemeMode.values.map((mode) => ListTile(
+              leading: Icon(
+                mode == ThemeMode.system
+                    ? Icons.brightness_auto
+                    : mode == ThemeMode.light
+                        ? Icons.light_mode
+                        : Icons.dark_mode,
+                color: Colors.white70,
+              ),
+              title: Text(
+                _themeLabel(mode),
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                ref.read(themeProvider.notifier).setTheme(mode);
+                Navigator.pop(ctx);
+              },
+            )),
+            const SizedBox(height: 16),
           ],
         ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('知道了'),
-          ),
-        ],
       ),
     );
   }
@@ -317,55 +264,25 @@ class _SettingsTile extends StatelessWidget {
         ),
         child: Icon(icon, size: 18, color: iconColor),
       ),
-      title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 15)),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-      ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white30, size: 20),
-    );
-  }
-}
-
-class _ThemeOption extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _ThemeOption({
-    required this.title,
-    required this.icon,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white70, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              ),
-            ),
-            if (isSelected)
-              const Icon(Icons.check_circle, color: Color(0xFF34D399), size: 22),
-          ],
+        style: const TextStyle(
+          color: Color(0x66FFFFFF),
+          fontSize: 13,
         ),
       ),
+      trailing: onTap != null
+          ? const Icon(Icons.chevron_right, color: Color(0x33FFFFFF))
+          : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
     );
   }
 }

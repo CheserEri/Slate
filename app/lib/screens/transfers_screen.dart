@@ -42,26 +42,30 @@ class TransfersScreen extends ConsumerWidget {
             ),
           ),
           transfersAsync.when(
-            loading: () => const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator(color: Colors.white)),
+            loading: () => SliverFillRemaining(
+              child: Center(
+                child: EmptyStateWidget(
+                  icon: Icons.sync,
+                  title: '正在加载...',
+                ),
+              ),
             ),
             error: (err, _) => SliverFillRemaining(
               child: Center(
-                child: Text('加载失败: $err', style: const TextStyle(color: Colors.white70)),
+                child: EmptyStateWidget(
+                  icon: Icons.error_outline,
+                  title: '加载失败',
+                  subtitle: err.toString(),
+                ),
               ),
             ),
             data: (tasks) {
               if (tasks.isEmpty) {
-                return const SliverFillRemaining(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.swap_vert, size: 64, color: Colors.white24),
-                        SizedBox(height: 16),
-                        Text('暂无传输任务', style: TextStyle(color: Colors.white38)),
-                      ],
-                    ),
+                return SliverFillRemaining(
+                  child: EmptyStateWidget(
+                    icon: Icons.swap_vert,
+                    title: '暂无传输任务',
+                    subtitle: '从照片备份到 SMB 服务器',
                   ),
                 );
               }

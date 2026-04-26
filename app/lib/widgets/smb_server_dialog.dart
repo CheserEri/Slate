@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
-import '../services/api_service.dart';
+import '../services/smb_service.dart';
 import '../utils/smb_form_logic.dart';
 
 Future<void> showSmbServerDialog(
@@ -25,6 +25,7 @@ class _SmbServerDialog extends StatefulWidget {
 }
 
 class _SmbServerDialogState extends State<_SmbServerDialog> {
+  final _smbService = SmbService();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _hostCtrl;
   late final TextEditingController _portCtrl;
@@ -99,39 +100,7 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildField(_nameCtrl, '显示名称', hint: '留空自动使用共享名/目录名'),
-              _buildField(_hostCtrl, '主机', hint: '10.147.20.50'),
-              _buildField(_portCtrl, '端口', keyboard: TextInputType.number, hint: '445'),
-              _buildField(
-                _shareCtrl,
-                '共享名',
-                hint: '点击右侧按钮选择或手动填写',
-                suffixIcon: IconButton(
-                  onPressed: _probingShares ? null : _pickShare,
-                  icon: _probingShares
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.drive_folder_upload_outlined),
-                ),
-              ),
-              _buildField(
-                _rootPathCtrl,
-                '储存根目录（可选）',
-                hint: '如 Cloud/MiGallery，开头不要带 /',
-                suffixIcon: IconButton(
-                  onPressed: _probingPaths ? null : _pickRootPath,
-                  icon: _probingPaths
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.folder_open_outlined),
-                ),
-              ),
+              _buildField(_hostCtrl, 'Samba服务器地址', hint: '10.147.20.50'),
               _buildField(_userCtrl, '用户名', hint: 'naeuta'),
               _buildField(
                 _passCtrl,
@@ -143,12 +112,41 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
                   icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                 ),
               ),
-              _buildField(_domainCtrl, '域（可选）', hint: 'WORKGROUP'),
+              _buildField(
+                _shareCtrl,
+                '分享',
+                hint: '点击右侧按钮选择或手动填写',
+                suffixIcon: IconButton(
+                  onPressed: _probingShares ? null : _pickShare,
+                  icon: _probingShares
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.open_in_new_outlined),
+                ),
+              ),
+              _buildField(
+                _rootPathCtrl,
+                '储存根目录(照片会储存在该目录下)',
+                hint: '如 storage/photos，开头不要带 /',
+                suffixIcon: IconButton(
+                  onPressed: _probingPaths ? null : _pickRootPath,
+                  icon: _probingPaths
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.open_in_new_outlined),
+                ),
+              ),
               const SizedBox(height: 6),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '添加逻辑参考 CX：先填主机/账号，再选共享名，再选根目录。根目录不要以 / 或 \\ 开头。',
+                  'eg: storage/photos (no \'/\' or \'\\\' at the start)',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
                 ),
               ),
@@ -157,10 +155,6 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _submitting ? null : () => Navigator.pop(context),
-          child: const Text('取消', style: TextStyle(color: Colors.white70)),
-        ),
         OutlinedButton(
           onPressed: _testingConnection || _submitting ? null : _testConnection,
           style: OutlinedButton.styleFrom(
@@ -198,25 +192,33 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
 
   int get _port => int.tryParse(_portCtrl.text.trim()) ?? 445;
 
+  SmbConfig get _draftConfig => SmbConfig(
+        id: widget.initial?.id ?? '',
+        name: _nameCtrl.text,
+        host: _hostCtrl.text.trim(),
+        port: _port,
+        share: _shareCtrl.text.trim(),
+        rootPath: SmbFormLogic.normalizeRootPath(_rootPathCtrl.text),
+        username: _userCtrl.text.trim(),
+        password: _passCtrl.text.isEmpty ? null : _passCtrl.text,
+        domain: _domainCtrl.text.trim(),
+        createdAt: widget.initial?.createdAt ?? DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
   void _onDraftChanged() {
     if (mounted) setState(() {});
   }
 
   Future<void> _pickShare() async {
     if (!SmbFormLogic.canBrowseShares(_draft)) {
-      _showSnack('请先填写主机地址', isError: true);
+      _showSnack('请先填写服务器地址和用户名', isError: true);
       return;
     }
 
     setState(() => _probingShares = true);
     try {
-      final shares = await ApiService().probeSmbShares(
-        host: _hostCtrl.text.trim(),
-        port: _port,
-        username: _userCtrl.text.trim(),
-        password: _passCtrl.text.isEmpty ? null : _passCtrl.text,
-        domain: _domainCtrl.text.trim(),
-      );
+      final shares = await _smbService.listShares(_draftConfig);
       if (!mounted) return;
       final selected = await showDialog<String>(
         context: context,
@@ -275,12 +277,7 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
       final selected = await showDialog<String>(
         context: context,
         builder: (_) => _RootPathDialog(
-          host: _hostCtrl.text.trim(),
-          port: _port,
-          share: _shareCtrl.text.trim(),
-          username: _userCtrl.text.trim(),
-          password: _passCtrl.text.isEmpty ? null : _passCtrl.text,
-          domain: _domainCtrl.text.trim(),
+          config: _draftConfig,
           initialPath: SmbFormLogic.normalizeRootPath(_rootPathCtrl.text),
         ),
       );
@@ -307,20 +304,13 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
 
   Future<void> _testConnection() async {
     if (_hostCtrl.text.trim().isEmpty) {
-      _showSnack('请先填写主机地址', isError: true);
+      _showSnack('请先填写服务器地址', isError: true);
       return;
     }
 
     setState(() => _testingConnection = true);
     try {
-      final ok = await ApiService().testSmbDraftConnection(
-        host: _hostCtrl.text.trim(),
-        port: _port,
-        share: _shareCtrl.text.trim(),
-        username: _userCtrl.text.trim(),
-        password: _passCtrl.text.isEmpty ? null : _passCtrl.text,
-        domain: _domainCtrl.text.trim(),
-      );
+      final ok = await _smbService.testConnection(_draftConfig);
       if (mounted) {
         _showSnack(ok ? '连接成功' : '连接失败', isError: !ok);
       }
@@ -361,7 +351,6 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
       await widget.onSubmit(config);
       if (mounted) Navigator.pop(context);
     } catch (_) {
-      // Parent callback is responsible for user-facing error feedback.
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -412,21 +401,11 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
 
 class _RootPathDialog extends StatefulWidget {
   const _RootPathDialog({
-    required this.host,
-    required this.port,
-    required this.share,
-    required this.username,
-    this.password,
-    required this.domain,
+    required this.config,
     required this.initialPath,
   });
 
-  final String host;
-  final int port;
-  final String share;
-  final String username;
-  final String? password;
-  final String domain;
+  final SmbConfig config;
   final String initialPath;
 
   @override
@@ -434,6 +413,7 @@ class _RootPathDialog extends StatefulWidget {
 }
 
 class _RootPathDialogState extends State<_RootPathDialog> {
+  final _smbService = SmbService();
   late String _currentPath;
   bool _loading = true;
   String? _error;
@@ -506,15 +486,7 @@ class _RootPathDialogState extends State<_RootPathDialog> {
       _error = null;
     });
     try {
-      final directories = await ApiService().probeSmbDirectories(
-        host: widget.host,
-        port: widget.port,
-        share: widget.share,
-        username: widget.username,
-        password: widget.password,
-        domain: widget.domain,
-        path: _currentPath,
-      );
+      final directories = await _smbService.listDirectories(widget.config, _currentPath);
       if (!mounted) return;
       setState(() {
         _directories = directories;

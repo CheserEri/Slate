@@ -204,3 +204,131 @@ class StatusCard extends StatelessWidget {
     );
   }
 }
+
+class EmptyStateWidget extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget? action;
+
+  const EmptyStateWidget({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 36, color: Colors.white.withValues(alpha: 0.3)),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitle!,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 13,
+              ),
+            ),
+          ],
+          if (action != null) ...[
+            const SizedBox(height: 24),
+            action!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class ShimmerLoading extends StatefulWidget {
+  final int itemCount;
+  final double itemHeight;
+
+  const ShimmerLoading({
+    super.key,
+    this.itemCount = 6,
+    this.itemHeight = 120,
+  });
+
+  @override
+  State<ShimmerLoading> createState() => _ShimmerLoadingState();
+}
+
+class _ShimmerLoadingState extends State<ShimmerLoading> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat();
+    _animation = Tween<double>(begin: -1, end: 2).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.85,
+      ),
+      itemCount: widget.itemCount,
+      itemBuilder: (context, index) {
+        return AnimatedBuilder(
+          animation: _animation,
+          builder: (context, child) {
+            return Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  begin: Alignment(_animation.value - 1, 0),
+                  end: Alignment(_animation.value, 0),
+                  colors: const [
+                    Color(0xFF1E293B),
+                    Color(0xFF334155),
+                    Color(0xFF1E293B),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}

@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/album_provider.dart';
 import '../providers/smb_provider.dart';
-import '../services/api_service.dart';
+import '../services/smb_service.dart';
+import '../services/local_storage_service.dart';
 import '../widgets/animations.dart';
 import 'photo_viewer_screen.dart';
 
@@ -27,7 +29,6 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
   @override
   void initState() {
     super.initState();
-    // FutureProvider auto-loads on watch, no need to manually trigger
   }
 
   @override
@@ -107,13 +108,10 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
                             child: const Icon(Icons.image, color: Colors.white24),
                           ),
                         )
-                      : PhotoFadeIn(
-                        child: _RemoteImage(
+                      : _RemoteImage(
                           serverId: widget.albumId,
                           remotePath: item.path,
-                          name: item.name,
                         ),
-                      ),
                 ),
               );
             },
@@ -127,12 +125,10 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
 class _RemoteImage extends StatefulWidget {
   final String serverId;
   final String remotePath;
-  final String name;
 
   const _RemoteImage({
     required this.serverId,
     required this.remotePath,
-    required this.name,
   });
 
   @override
@@ -140,21 +136,23 @@ class _RemoteImage extends StatefulWidget {
 }
 
 class _RemoteImageState extends State<_RemoteImage> {
-  String? _url;
+  Uint8List? _imageData;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadUrl();
+    _load();
   }
 
-  Future<void> _loadUrl() async {
+  Future<void> _load() async {
     try {
-      final url = await ApiService().previewSmbFileUrl(widget.serverId, widget.remotePath);
+      final servers = await LocalStorageService().getSmbServers();
+      final server = servers.firstWhere((s) => s.id == widget.serverId);
+      final data = await SmbService().readFile(server, widget.remotePath);
       if (mounted) {
         setState(() {
-          _url = url;
+          _imageData = data;
           _loading = false;
         });
       }
@@ -173,25 +171,16 @@ class _RemoteImageState extends State<_RemoteImage> {
         ),
       );
     }
-    if (_url == null) {
+    if (_imageData == null) {
       return Container(
         color: const Color(0xFF1A1A2E),
         child: const Icon(Icons.broken_image, color: Colors.white24),
       );
     }
-    return Image.network(
-      _url!,
+    return Image.memory(
+      _imageData!,
       fit: BoxFit.cover,
-      headers: const {'Accept': 'image/*'},
-      loadingBuilder: (_, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          color: const Color(0xFF1A1A2E),
-          child: const Center(
-            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-          ),
-        );
-      },
+      cacheWidth: 400,
       errorBuilder: (_, __, ___) => Container(
         color: const Color(0xFF1A1A2E),
         child: const Icon(Icons.broken_image, color: Colors.white24),

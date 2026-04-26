@@ -1,14 +1,16 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import '../providers/transfer_provider.dart';
 import '../providers/smb_provider.dart';
-import '../services/api_service.dart';
+import '../services/smb_service.dart';
+import '../services/local_storage_service.dart';
 import '../widgets/glass_container.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:exif/exif.dart' as exif_pkg;
-import 'package:http/http.dart' as http;
 
 class PhotoViewerScreen extends StatefulWidget {
   final List<MediaItem> photos;
@@ -36,7 +38,6 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
-    // 延迟显示 UI 提示
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) setState(() => _showUI = true);
       Future.delayed(const Duration(seconds: 2), () {
@@ -83,14 +84,13 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                             errorBuilder: (_, __, ___) => Container(
                               color: Colors.black,
                               child: const Icon(Icons.broken_image,
-                                  size: 64, color: const Color(0x1FFFFFFF)),
+                                  size: 64, color: Color(0x1FFFFFFF)),
                             ),
                           ),
                   ),
                 );
               },
             ),
-            // 渐变遮罩（只在 UI 显示时）
             AnimatedOpacity(
               opacity: _showUI ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 250),
@@ -110,14 +110,12 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                 ),
               ),
             ),
-            // UI 层
             AnimatedOpacity(
               opacity: _showUI ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 250),
               child: SafeArea(
                 child: Column(
                   children: [
-                    // 顶部栏（毛玻璃）
                     GlassContainer(
                       margin: const EdgeInsets.all(12),
                       borderRadius: BorderRadius.circular(16),
@@ -149,7 +147,6 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                       ),
                     ),
                     const Spacer(),
-                    // 底部操作栏（毛玻璃）
                     GlassContainer(
                       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       borderRadius: BorderRadius.circular(24),
@@ -229,7 +226,7 @@ class _BottomActionBar extends ConsumerWidget {
           result.allSucceeded
               ? '已加入备份队列'
               : result.allFailed
-                  ? '备份失败，请检查 SMB 配置或后端连接'
+                  ? '备份失败，请检查 SMB 配置'
                   : '部分备份成功：成功 ${result.successCount}，失败 ${result.failedCount}',
         ),
       ),
@@ -240,9 +237,13 @@ class _BottomActionBar extends ConsumerWidget {
     try {
       if (isRemote) {
         final serverId = _extractServerId(photo.path);
-        final url =
-            await ApiService().previewSmbFileUrl(serverId, photo.path);
-        await Share.share(url, subject: photo.name);
+        final servers = await LocalStorageService().getSmbServers();
+        final server = servers.firstWhere((s) => s.id == serverId);
+        final data = await SmbService().readFile(server, photo.path);
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/${photo.name}');
+        await tempFile.writeAsBytes(data);
+        await Share.shareXFiles([XFile(tempFile.path)], text: photo.name);
       } else {
         await Share.shareXFiles([XFile(photo.path)], text: photo.name);
       }
@@ -258,15 +259,13 @@ class _BottomActionBar extends ConsumerWidget {
   Future<void> _downloadRemote(BuildContext context) async {
     try {
       final serverId = _extractServerId(photo.path);
-      final dir = Directory('/storage/emulated/0/Download/Slate');
-      await dir.create(recursive: true);
-      final savePath = '${dir.path}/${photo.name}';
-      await ApiService()
-          .downloadSmbFileToLocal(serverId, photo.path, savePath);
+      final servers = await LocalStorageService().getSmbServers();
+      final server = servers.firstWhere((s) => s.id == serverId);
+      final localPath = await SmbService().downloadFile(server, photo.path);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('已保存到 Downloads/Slate/${photo.name}')),
+              content: Text('已保存到 $localPath')),
         );
       }
     } catch (e) {
@@ -341,7 +340,7 @@ class _RemotePhotoViewer extends StatefulWidget {
 }
 
 class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
-  String? _url;
+  Uint8List? _imageData;
   bool _loading = true;
 
   @override
@@ -352,11 +351,12 @@ class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
 
   Future<void> _load() async {
     try {
-      final url = await ApiService()
-          .previewSmbFileUrl(widget.serverId, widget.remotePath);
+      final servers = await LocalStorageService().getSmbServers();
+      final server = servers.firstWhere((s) => s.id == widget.serverId);
+      final data = await SmbService().readFile(server, widget.remotePath);
       if (mounted)
         setState(() {
-          _url = url;
+          _imageData = data;
           _loading = false;
         });
     } catch (_) {
@@ -376,32 +376,20 @@ class _RemotePhotoViewerState extends State<_RemotePhotoViewer> {
         )),
       );
     }
-    if (_url == null) {
+    if (_imageData == null) {
       return Container(
         color: Colors.black,
         child: const Icon(Icons.broken_image,
-            size: 64, color: const Color(0x1FFFFFFF)),
+            size: 64, color: Color(0x1FFFFFFF)),
       );
     }
-    return Image.network(
-      _url!,
+    return Image.memory(
+      _imageData!,
       fit: BoxFit.contain,
-      headers: const {'Accept': 'image/*'},
-      loadingBuilder: (_, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          color: Colors.black,
-          child: const Center(
-              child: CircularProgressIndicator(
-            color: Colors.white,
-            strokeWidth: 2,
-          )),
-        );
-      },
       errorBuilder: (_, __, ___) => Container(
         color: Colors.black,
         child: const Icon(Icons.broken_image,
-            size: 64, color: const Color(0x1FFFFFFF)),
+            size: 64, color: Color(0x1FFFFFFF)),
       ),
     );
   }
@@ -435,14 +423,11 @@ class _ExifInfoSheetState extends State<_ExifInfoSheet> {
         _exif = data.map((k, v) => MapEntry(k, v.toString()));
       } else {
         final serverId = widget.photo.path.split('/').first;
-        final url = await ApiService()
-            .previewSmbFileUrl(serverId, widget.photo.path);
-        final response = await http.get(Uri.parse(url));
-        if (response.statusCode == 200) {
-          final data =
-              await exif_pkg.readExifFromBytes(response.bodyBytes);
-          _exif = data.map((k, v) => MapEntry(k, v.toString()));
-        }
+        final servers = await LocalStorageService().getSmbServers();
+        final server = servers.firstWhere((s) => s.id == serverId);
+        final data = await SmbService().readFile(server, widget.photo.path);
+        final exifData = await exif_pkg.readExifFromBytes(data);
+        _exif = exifData.map((k, v) => MapEntry(k, v.toString()));
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);

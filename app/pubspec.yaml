@@ -4,21 +4,21 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.11.4
+  sdk: ^3.11.0
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
   share_plus: ^10.0.0
-  connectivity_plus: ^6.0.0
   exif: ^3.3.0
   photo_manager: ^3.6.0
   flutter_riverpod: ^2.6.1
-  http: ^1.2.0
-  cached_network_image: ^3.4.1
   shared_preferences: ^2.2.0
   intl: ^0.19.0
+  smb_connect: ^0.0.8+1
+  path_provider: ^2.1.0
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:

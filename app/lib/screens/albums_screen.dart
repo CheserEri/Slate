@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/album_provider.dart';
 import '../providers/smb_provider.dart';
+import '../widgets/glass_container.dart';
 import '../widgets/animations.dart';
 import 'photo_grid_screen.dart';
 
@@ -126,24 +127,23 @@ class AlbumsScreen extends ConsumerWidget {
           ),
           smbServers.when(
             loading: () => const SliverToBoxAdapter(
-              child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              child: SizedBox(
+                height: 200,
+                child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              ),
             ),
             error: (err, _) => SliverToBoxAdapter(
               child: Center(child: Text('加载失败: $err', style: const TextStyle(color: Colors.white70))),
             ),
             data: (servers) {
               if (servers.isEmpty) {
-                return const SliverToBoxAdapter(
+                return SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.all(48),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          Icon(Icons.cloud_off, size: 48, color: Colors.white24),
-                          SizedBox(height: 12),
-                          Text('暂无 SMB 服务器', style: TextStyle(color: Colors.white30)),
-                        ],
-                      ),
+                    padding: const EdgeInsets.all(48),
+                    child: EmptyStateWidget(
+                      icon: Icons.cloud_off,
+                      title: '暂无 SMB 服务器',
+                      subtitle: '在 SMB 页面添加服务器',
                     ),
                   ),
                 );
