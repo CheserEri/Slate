@@ -80,3 +80,18 @@ final smbItemsProvider = FutureProvider.family<List<MediaItem>, String>(
     return await SmbService().getMediaItems(server, path: path);
   },
 );
+
+/// 获取所有 SMB 服务器的相册（根目录下的直接子文件夹）
+final allSmbAlbumsProvider = FutureProvider<List<Album>>((ref) async {
+  // 监听 smbServersProvider，自动在服务器列表变化时重新计算
+  final serversAsync = ref.watch(smbServersProvider);
+  final servers = serversAsync.value ?? [];
+  final List<Album> all = [];
+  for (final server in servers) {
+    final albums = await SmbService().getAlbums(server, currentPath: '');
+    all.addAll(albums);
+  }
+  // 按名称排序
+  all.sort((a, b) => a.name.compareTo(b.name));
+  return all;
+});

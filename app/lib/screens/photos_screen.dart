@@ -12,6 +12,68 @@ import '../services/photo_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/animations.dart';
 import 'photo_viewer_screen.dart';
+import '../services/smb_service.dart';
+import '../services/local_storage_service.dart';
+import '../widgets/smb_image_widget.dart';
+
+/// 相册选择列表项（支持本地和远程封面）
+class _AlbumSelectorItem extends StatelessWidget {
+  final Album album;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AlbumSelectorItem({
+    required this.album,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: album.coverPath != null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: album.source is SmbSource
+                  ? SmbRemoteImage(
+                      serverId: (album.source as SmbSource).serverId,
+                      remotePath: album.coverPath!,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                    )
+                  : Image.file(
+                      File(album.coverPath!),
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 48,
+                        height: 48,
+                        color: Colors.white10,
+                        child: const Icon(Icons.folder, size: 24),
+                      ),
+                    ),
+            )
+          : Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.folder, size: 24),
+            ),
+      title: Text(album.name, style: const TextStyle(color: Colors.white)),
+      subtitle: Text('${album.count} 张照片', style: const TextStyle(color: Colors.white60)),
+      trailing: selected
+          ? const Icon(Icons.check_circle, color: Colors.blue)
+          : null,
+      onTap: onTap,
+    );
+  }
+}
 
 class PhotosScreen extends ConsumerStatefulWidget {
   const PhotosScreen({super.key});
@@ -210,7 +272,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
     );
   }
 
-  void _showBackupDialog(List<String> photoIds) {
+    void _showBackupDialog(List<String> photoIds) {
     final photos = ref.read(localPhotosProvider).valueOrNull ?? [];
     final paths = photoIds
         .map((id) => photos.firstWhere((p) => p.id == id).path)
@@ -232,6 +294,8 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
       selectedServer = servers.first.id;
     }
     var remoteDir = ref.read(defaultBackupPathProvider);
+    var selectedAlbumId = <String>{}; // 多选相册，为空则使用 remoteDir
+    var isCreating = false; // 是否正在创建相册
 
     showModalBottomSheet(
       context: context,
@@ -243,6 +307,11 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setState) {
+            // 获取选中服务器的相册
+            final selectedServerObj = servers.firstWhere((s) => s.id == selectedServer);
+            final albumsAsync = ref.watch(smbAlbumsProvider(selectedServer!));
+            final albums = albumsAsync.valueOrNull ?? [];
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(ctx).viewInsets.bottom,
@@ -267,19 +336,174 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                       return ChoiceChip(
                         label: Text(s.name),
                         selected: selectedServer == s.id,
-                        onSelected: (_) => setState(() => selectedServer = s.id),
+                        onSelected: (_) {
+                          setState(() {
+                            selectedServer = s.id;
+                            selectedAlbumId.clear(); // 重置相册选择
+                            remoteDir = '';
+                          });
+                        },
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 20),
-                  Text('远程目录', style: Theme.of(context).textTheme.labelLarge),
+                  Text('选择相册（可选）', style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 10),
+                  ...albums.map((album) => _AlbumSelectorItem(
+                        album: album,
+                        selected: selectedAlbumId.contains(album.id),
+                        onTap: () {
+                          setState(() {
+                            if (selectedAlbumId.contains(album.id)) {
+                              selectedAlbumId.remove(album.id);
+                            } else {
+                              selectedAlbumId.add(album.id);
+                            }
+                            remoteDir = album.id;
+                          });
+                        },
+                      )),
+                  // 新建相册按钮
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: isCreating
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.create_new_folder, color: Colors.white54),
+                    ),
+                    title: const Text('新建相册', style: TextStyle(color: Colors.white)),
+                    trailing: isCreating
+                        ? null
+                        : const Icon(Icons.add, color: Colors.white54),
+                    onTap: isCreating
+                        ? null
+                        : () async {
+                            final controller = TextEditingController();
+                            final result = await showDialog<String>(
+                              context: ctx,
+                              builder: (dialogCtx) => AlertDialog(
+                                title: const Text('新建相册'),
+                                content: TextField(
+                                  controller: controller,
+                                  autofocus: true,
+                                  decoration: const InputDecoration(
+                                    hintText: '输入相册文件夹名称',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dialogCtx),
+                                    child: const Text('取消'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      final name = controller.text.trim();
+                                      if (name.isNotEmpty) Navigator.pop(dialogCtx, name);
+                                    },
+                                    child: const Text('创建'),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (result == null || result.isEmpty) return;
+
+                            final newAlbumName = result;
+                            final smbService = SmbService();
+                            try {
+                              setState(() => isCreating = true);
+                              final server = servers.firstWhere((s) => s.id == selectedServer);
+                              final serverRoot = server.rootPath;
+                              final newPath = serverRoot.isEmpty ? newAlbumName : '$serverRoot/$newAlbumName';
+                              await smbService.createDirectory(server, newPath);
+
+                              ref.invalidate(smbAlbumsProvider(selectedServer!));
+                              await Future.delayed(const Duration(milliseconds: 800));
+
+                              final newAlbums = await smbService.getAlbums(server);
+                              final newAlbum = newAlbums.firstWhere(
+                                (a) => a.name.toLowerCase() == newAlbumName.toLowerCase(),
+                                orElse: () => Album(
+                                  id: newAlbumName,
+                                  name: newAlbumName,
+                                  source: SmbSource(server.id),
+                                  coverPath: null,
+                                  count: 0,
+                                  parentPath: serverRoot,
+                                ),
+                              );
+
+                              if (!ctx.mounted) return;
+                              setState(() {
+                                selectedAlbumId.clear();
+                                selectedAlbumId.add(newAlbum.id);
+                                remoteDir = newAlbum.id;
+                                isCreating = false;
+                              });
+
+                              if (mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('相册创建成功'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (!ctx.mounted) return;
+                              setState(() => isCreating = false);
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(
+                                    content: Text('创建失败: ${e.toString()}'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: selectedAlbumId.isEmpty,
+                        onChanged: (v) {
+                          setState(() {
+                            if (v == true) selectedAlbumId.clear();
+                          });
+                        },
+                      ),
+                      const Expanded(
+                        child: Text('或手动输入目录（不选择相册时使用）', style: TextStyle(color: Colors.white60)),
+                      ),
+                    ],
+                  ),
                   TextField(
                     controller: TextEditingController(text: remoteDir),
-                    onChanged: (v) => remoteDir = v,
+                    onChanged: (v) {
+                      remoteDir = v;
+                      if (v.isNotEmpty) {
+                        setState(() => selectedAlbumId.clear());
+                      }
+                    },
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: '/SlateBackup',
+                      hintText: '/SlateBackup 或选择的相册路径',
                       hintStyle: const TextStyle(color: Colors.white38),
                       filled: true,
                       fillColor: Colors.white.withValues(alpha: 0.06),
@@ -333,6 +557,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
       },
     );
   }
+
 }
 
 class _PhotoTile extends StatelessWidget {

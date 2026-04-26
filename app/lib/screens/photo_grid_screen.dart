@@ -13,12 +13,16 @@ class PhotoGridScreen extends ConsumerStatefulWidget {
   final String albumId;
   final String albumName;
   final bool isLocal;
+  final bool isSettingCover;
+  final String? albumPath;
 
   const PhotoGridScreen({
     super.key,
     required this.albumId,
     required this.albumName,
     required this.isLocal,
+    this.isSettingCover = false,
+    this.albumPath,
   });
 
   @override
@@ -26,6 +30,8 @@ class PhotoGridScreen extends ConsumerStatefulWidget {
 }
 
 class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
+  String? _selectedPhotoName; // 仅保存文件名
+
   @override
   void initState() {
     super.initState();
@@ -83,41 +89,90 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
+              final isSelected = _selectedPhotoName == item.name;
               return BounceTap(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    PageFadeTransition(
-                      child: PhotoViewerScreen(
-                        photos: items,
-                        initialIndex: index,
-                        isRemote: !widget.isLocal,
-                      ),
-                    ),
-                  );
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: widget.isLocal
-                      ? Image.file(
-                          File(item.path),
-                          fit: BoxFit.cover,
-                          cacheWidth: 400,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: const Color(0xFF1A1A2E),
-                            child: const Icon(Icons.image, color: Colors.white24),
+                onTap: widget.isSettingCover
+                    ? () {
+                        setState(() {
+                          if (isSelected) {
+                            _selectedPhotoName = null;
+                          } else {
+                            _selectedPhotoName = item.name;
+                          }
+                        });
+                      }
+                    : () {
+                        Navigator.push(
+                          context,
+                          PageFadeTransition(
+                            child: PhotoViewerScreen(
+                              photos: items,
+                              initialIndex: index,
+                              isRemote: !widget.isLocal,
+                            ),
                           ),
-                        )
-                      : _RemoteImage(
-                          serverId: widget.albumId,
-                          remotePath: item.path,
-                        ),
+                        );
+                      },
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: isSelected
+                        ? Border.all(color: Colors.blueAccent, width: 3)
+                        : null,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: widget.isLocal
+                        ? Image.file(
+                            File(item.path),
+                            fit: BoxFit.cover,
+                            cacheWidth: 400,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: const Color(0xFF1A1A2E),
+                              child: const Icon(Icons.image, color: Colors.white24),
+                            ),
+                          )
+                        : _RemoteImage(
+                            serverId: widget.albumId,
+                            remotePath: item.path,
+                          ),
+                  ),
                 ),
               );
             },
           );
         },
       ),
+      floatingActionButton: widget.isSettingCover && _selectedPhotoName != null
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                if (widget.albumPath == null) return;
+                try {
+                  final smbService = SmbService();
+                  final coverPath = widget.albumPath!.isEmpty
+                      ? _selectedPhotoName!
+                      : '${widget.albumPath}/$_selectedPhotoName!';
+                  await smbService.setCustomCover(
+                    widget.albumId,
+                    widget.albumPath!,
+                    coverPath,
+                  );
+                  if (mounted) {
+                    Navigator.pop(context, coverPath);
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('设置失败: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.check),
+              label: const Text('设为封面'),
+              backgroundColor: Colors.blueAccent,
+            )
+          : null,
     );
   }
 }

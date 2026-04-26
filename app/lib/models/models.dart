@@ -276,4 +276,21 @@ class TransferTask {
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'server_id': serverId,
+      'transfer_type': transferType.name,
+      'remote_path': remotePath,
+      'local_path': localPath,
+      'total_bytes': totalBytes,
+      'written_bytes': writtenBytes,
+      'progress': progress,
+      'status': status.name,
+      'error_message': errorMessage,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+    };
+  }
 }

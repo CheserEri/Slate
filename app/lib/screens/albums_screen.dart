@@ -1,11 +1,71 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/album_provider.dart';
-import '../providers/smb_provider.dart';
+import '../models/models.dart';import '../providers/smb_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/animations.dart';
 import 'photo_grid_screen.dart';
+import '../services/smb_service.dart';
+import '../services/local_storage_service.dart';
+import '../widgets/smb_image_widget.dart';
+
+/// SMB 远程图片加载Widget
+
+class SmbRemoteImageState extends State<SmbRemoteImage> {
+  Uint8List? _imageData;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final servers = await LocalStorageService().getSmbServers();
+      final server = servers.firstWhere((s) => s.id == widget.serverId);
+      final data = await SmbService().readFile(server, widget.remotePath);
+      if (mounted) {
+        setState(() {
+          _imageData = data;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        color: const Color(0xFF1A1A2E),
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+        ),
+      );
+    }
+    if (_imageData == null) {
+      return Container(
+        color: const Color(0xFF1A1A2E),
+        child: const Icon(Icons.broken_image, color: Colors.white24),
+      );
+    }
+    return Image.memory(
+      _imageData!,
+      fit: BoxFit.cover,
+      cacheWidth: 400,
+      errorBuilder: (_, __, ___) => Container(
+        color: const Color(0xFF1A1A2E),
+        child: const Icon(Icons.broken_image, color: Colors.white24),
+      ),
+    );
+  }
+}
 
 class AlbumsScreen extends ConsumerWidget {
   const AlbumsScreen({super.key});
@@ -81,6 +141,7 @@ class AlbumsScreen extends ConsumerWidget {
                       name: album.name,
                       count: album.count,
                       coverPath: album.coverPath,
+                      source: album.source,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -107,7 +168,7 @@ class AlbumsScreen extends ConsumerWidget {
               child: Row(
                 children: [
                   const Text(
-                    '网络相册',
+                    'SMB 相册',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -117,7 +178,7 @@ class AlbumsScreen extends ConsumerWidget {
                   ),
                   const Spacer(),
                   TextButton.icon(
-                    onPressed: () => ref.read(smbServersProvider.notifier).load(),
+                    onPressed: () { ref.invalidate(allSmbAlbumsProvider); },
                     icon: const Icon(Icons.refresh, size: 18, color: Color(0x99FFFFFF)),
                     label: const Text('刷新', style: TextStyle(color: Color(0x99FFFFFF))),
                   ),
@@ -125,7 +186,7 @@ class AlbumsScreen extends ConsumerWidget {
               ),
             ),
           ),
-          smbServers.when(
+          ref.watch(allSmbAlbumsProvider).when(
             loading: () => const SliverToBoxAdapter(
               child: SizedBox(
                 height: 200,
@@ -135,15 +196,15 @@ class AlbumsScreen extends ConsumerWidget {
             error: (err, _) => SliverToBoxAdapter(
               child: Center(child: Text('加载失败: $err', style: const TextStyle(color: Colors.white70))),
             ),
-            data: (servers) {
-              if (servers.isEmpty) {
+            data: (albums) {
+              if (albums.isEmpty) {
                 return SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(48),
                     child: EmptyStateWidget(
-                      icon: Icons.cloud_off,
-                      title: '暂无 SMB 服务器',
-                      subtitle: '在 SMB 页面添加服务器',
+                      icon: Icons.folder_off,
+                      title: '暂无线 SMB 相册',
+                      subtitle: '请检查服务器 rootPath 设置是否正确',
                     ),
                   ),
                 );
@@ -159,29 +220,75 @@ class AlbumsScreen extends ConsumerWidget {
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
-                      final server = servers[index];
+                      final album = albums[index];
+                      final serverId = album.source is SmbSource
+                          ? (album.source as SmbSource).serverId
+                          : '';
                       return _AlbumCard(
-                        name: server.name,
-                        count: 0,
-                        coverPath: null,
-                        icon: Icons.computer,
+                        name: album.name,
+                        count: album.count,
+                        coverPath: album.coverPath,
+                        source: album.source,
                         onTap: () {
-                          ref.read(selectedSmbServerProvider.notifier).state = server.id;
-                          ref.read(smbCurrentPathProvider.notifier).state = '';
-                          Navigator.push(
-                            context,
-                            PageFadeTransition(
-                              child: PhotoGridScreen(
-                                albumId: server.id,
-                                albumName: server.name,
-                                isLocal: false,
+                          if (serverId.isNotEmpty) {
+                            ref.read(selectedSmbServerProvider.notifier).state = serverId;
+                            ref.read(smbCurrentPathProvider.notifier).state = album.id;
+                            Navigator.push(
+                              context,
+                              PageFadeTransition(
+                                child: PhotoGridScreen(
+                                  albumId: serverId,
+                                  albumName: album.name,
+                                  isLocal: false,
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          }
                         },
+                        onLongPress: serverId.isNotEmpty
+                            ? () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('设置自定义封面'),
+                                    content: Text('为相册 "${album.name}" 选择一张照片作为封面？'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: const Text('取消'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('选择照片'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed != true) return;
+
+                                final result = await Navigator.push(
+                                    context,
+                                    PageFadeTransition(
+                                      child: PhotoGridScreen(
+                                        albumId: serverId,
+                                        albumName: album.name,
+                                        isLocal: false,
+                                        isSettingCover: true,
+                                        albumPath: album.id,
+                                      ),
+                                    ),
+                                );
+                                if (result != null && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('封面已更新'), duration: Duration(seconds: 1)),
+                                  );
+                                  // 相册列表会自动刷新（getAlbums 会读取新的自定义封面）
+                                }
+                              }
+                            : null,
                       );
                     },
-                    childCount: servers.length,
+                    childCount: albums.length,
                   ),
                 ),
               );
@@ -199,20 +306,25 @@ class _AlbumCard extends StatelessWidget {
   final int count;
   final String? coverPath;
   final IconData? icon;
+  final MediaSource source;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const _AlbumCard({
     required this.name,
     required this.count,
     this.coverPath,
     this.icon,
+    required this.source,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     return BounceTap(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
@@ -231,12 +343,18 @@ class _AlbumCard extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (coverPath != null)
-                Image.file(
-                  File(coverPath!),
-                  fit: BoxFit.cover,
-                  cacheWidth: 400,
-                  errorBuilder: (_, __, ___) => _placeholder(),
-                )
+                if (source is SmbSource)
+                  SmbRemoteImage(
+                    serverId: (source as SmbSource).serverId,
+                    remotePath: coverPath!,
+                  )
+                else
+                  Image.file(
+                    File(coverPath!),
+                    fit: BoxFit.cover,
+                    cacheWidth: 400,
+                    errorBuilder: (_, __, ___) => _placeholder(),
+                  )
               else
                 _placeholder(),
               Container(

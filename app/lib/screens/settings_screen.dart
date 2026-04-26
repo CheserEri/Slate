@@ -184,10 +184,10 @@ class SettingsScreen extends ConsumerWidget {
                 _themeLabel(mode),
                 style: const TextStyle(color: Colors.white),
               ),
-              onTap: () {
-                ref.read(themeProvider.notifier).setTheme(mode);
-                Navigator.pop(ctx);
-              },
+                onTap: () {
+                  ref.read(themeProvider.notifier).setMode(mode);
+                  Navigator.pop(ctx);
+                },
             )),
             const SizedBox(height: 16),
           ],
