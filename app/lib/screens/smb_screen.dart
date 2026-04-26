@@ -137,7 +137,7 @@ class SmbScreen extends ConsumerWidget {
                               ),
                             ),
                             PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert, color: Colors.white54, size: 20),
+                              icon: const Icon(Icons.more_vert, color: Color(0xB3FFFFFF), size: 20),
                               color: const Color(0xFF0F172A),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               itemBuilder: (_) => [

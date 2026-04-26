@@ -81,9 +81,77 @@ final smbItemsProvider = FutureProvider.family<List<MediaItem>, String>(
   },
 );
 
+class SmbItemsPagedNotifier extends StateNotifier<AsyncValue<MediaItemPage>> {
+  final SmbConfig server;
+  final String path;
+  final Ref ref;
+  static const int pageSize = 50;
+
+  SmbItemsPagedNotifier({
+    required this.server,
+    required this.path,
+    required this.ref,
+  }) : super(const AsyncValue.loading()) {
+    load();
+  }
+
+  Future<void> load() async {
+    state = const AsyncValue.loading();
+    try {
+      final page = await SmbService().getMediaItems(
+        server,
+        path: path,
+        offset: 0,
+        limit: pageSize,
+      );
+      state = AsyncValue.data(page);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> loadMore() async {
+    final current = state.valueOrNull;
+    if (current == null || !current.hasMore) return;
+
+    final loadingState = state;
+    if (loadingState is AsyncLoading) return;
+
+    try {
+      final page = await SmbService().getMediaItems(
+        server,
+        path: path,
+        offset: current.items.length,
+        limit: pageSize,
+      );
+      state = AsyncValue.data(MediaItemPage(
+        items: [...current.items, ...page.items],
+        total: page.total,
+        hasMore: page.hasMore,
+      ));
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  bool get hasMore => state.valueOrNull?.hasMore ?? true;
+}
+
+final smbItemsPagedProvider = StateNotifierProvider.family<SmbItemsPagedNotifier,
+    AsyncValue<MediaItemPage>, ({String serverId, String path})>(
+  (ref, params) {
+    final servers = ref.watch(smbServersProvider).value ?? [];
+    final server = servers.firstWhere((s) => s.id == params.serverId);
+    return SmbItemsPagedNotifier(
+      server: server,
+      path: params.path,
+      ref: ref,
+    );
+  },
+);
+
 /// 获取所有 SMB 服务器的相册（根目录下的直接子文件夹）
 final allSmbAlbumsProvider = FutureProvider<List<Album>>((ref) async {
-  // 监听 smbServersProvider，自动在服务器列表变化时重新计算
   final serversAsync = ref.watch(smbServersProvider);
   final servers = serversAsync.value ?? [];
   final List<Album> all = [];
@@ -91,7 +159,6 @@ final allSmbAlbumsProvider = FutureProvider<List<Album>>((ref) async {
     final albums = await SmbService().getAlbums(server, currentPath: '');
     all.addAll(albums);
   }
-  // 按名称排序
   all.sort((a, b) => a.name.compareTo(b.name));
   return all;
 });

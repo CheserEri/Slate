@@ -193,7 +193,7 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
   int get _port => int.tryParse(_portCtrl.text.trim()) ?? 445;
 
   SmbConfig get _draftConfig => SmbConfig(
-        id: widget.initial?.id ?? '',
+        id: widget.initial?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameCtrl.text,
         host: _hostCtrl.text.trim(),
         port: _port,
@@ -328,7 +328,7 @@ class _SmbServerDialogState extends State<_SmbServerDialog> {
     try {
       final normalizedRoot = SmbFormLogic.normalizeRootPath(_rootPathCtrl.text);
       final config = SmbConfig(
-        id: widget.initial?.id ?? '',
+        id: widget.initial?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
         name: SmbFormLogic.resolveDisplayName(
           SmbFormDraft(
             name: _nameCtrl.text,

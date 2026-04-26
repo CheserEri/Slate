@@ -11,6 +11,7 @@ class SmbRemoteImage extends StatefulWidget {
   final double? width;
   final double? height;
   final BoxFit fit;
+  final bool useThumbnail;
 
   const SmbRemoteImage({
     required this.serverId,
@@ -18,6 +19,7 @@ class SmbRemoteImage extends StatefulWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.useThumbnail = true,
     super.key,
   });
 
@@ -39,7 +41,12 @@ class _SmbRemoteImageState extends State<SmbRemoteImage> {
     try {
       final servers = await LocalStorageService().getSmbServers();
       final server = servers.firstWhere((s) => s.id == widget.serverId);
-      final data = await SmbService().readFile(server, widget.remotePath);
+      Uint8List data;
+      if (widget.useThumbnail) {
+        data = await SmbService().readThumbnail(server, widget.remotePath);
+      } else {
+        data = await SmbService().readFile(server, widget.remotePath);
+      }
       if (mounted) {
         setState(() {
           _imageData = data;

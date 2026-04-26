@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smb_connect/smb_connect.dart';
 import 'package:smb_connect/src/exceptions.dart' show SmbException;
 import '../models/models.dart';
+import 'cache_service.dart';
 
-/// 连接包装器，管理 SMB 连接的生命周期和健康状态
 class _ConnectionWrapper {
   final SmbConnect connect;
   DateTime lastUsed;
@@ -15,25 +15,40 @@ class _ConnectionWrapper {
   _ConnectionWrapper(this.connect, this.lastUsed, {this.isValid = true});
 }
 
+class MediaItemPage {
+  final List<MediaItem> items;
+  final int total;
+  final bool hasMore;
+
+  MediaItemPage({required this.items, required this.total, required this.hasMore});
+}
+
 class SmbService {
   final Map<String, _ConnectionWrapper> _connections = {};
-  static const _maxConnectionAge = Duration(minutes: 1); // 缩短到1分钟，更快发现失效连接
+  static const _maxConnectionAge = Duration(minutes: 1);
   SharedPreferences? _prefs;
+  final CacheService _cacheService = CacheService();
+  bool _cacheInitialized = false;
+  static const int _pageSize = 50;
 
-  /// 获取 SharedPreferences 实例（懒加载）
+  Future<void> _ensureCacheInitialized() async {
+    if (!_cacheInitialized) {
+      await _cacheService.init();
+      _cacheInitialized = true;
+    }
+  }
+
   Future<SharedPreferences> _getPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
     return _prefs!;
   }
 
-  /// 路径规范化：确保路径格式正确
   String _normalizePath(String path) {
     if (path.isEmpty) return '';
     final trimmed = path.replaceAll(RegExp(r'^/+|/+$'), '');
     return '/$trimmed';
   }
 
-  /// 构建完整的 SMB 路径（相对于共享）
   String _buildSMBPath(SmbConfig config, String path) {
     final share = config.share.replaceAll(RegExp(r'^/+|/+$'), '');
     final root = config.rootPath.replaceAll(RegExp(r'^/+|/+$'), '');
@@ -49,33 +64,27 @@ class SmbService {
     return buffer.toString();
   }
 
-  /// 获取或创建连接（带健康检查）
   Future<SmbConnect> _getConnection(SmbConfig config) async {
     final key = '${config.host}:${config.username}';
     final now = DateTime.now();
 
-    // 检查现有连接是否有效
     if (_connections.containsKey(key)) {
       final wrapper = _connections[key]!;
       if (wrapper.isValid && now.difference(wrapper.lastUsed) < _maxConnectionAge) {
-        // 快速验证连接是否仍然有效
         try {
           await wrapper.connect.listShares();
           wrapper.lastUsed = now;
           return wrapper.connect;
         } catch (_) {
-          // 连接已失效，清理并继续创建新连接
           await wrapper.connect.close();
           _connections.remove(key);
         }
       } else {
-        // 连接过期或标记为无效，清理
         await wrapper.connect.close();
         _connections.remove(key);
       }
     }
 
-    // 创建新连接（带断开回调）
     try {
       final connect = await SmbConnect.connectAuth(
         host: config.host,
@@ -95,14 +104,12 @@ class SmbService {
     }
   }
 
-  /// 标记连接为需要重连
   void _invalidateConnection(String host, String username) {
     final key = '$host:$username';
     _connections[key]?.isValid = false;
     _connections.remove(key);
   }
 
-  /// 测试连接
   Future<bool> testConnection(SmbConfig config) async {
     try {
       final connect = await _getConnection(config);
@@ -113,7 +120,6 @@ class SmbService {
     }
   }
 
-  /// 列出共享目录
   Future<List<String>> listShares(SmbConfig config) async {
     try {
       final connect = await _getConnection(config);
@@ -124,9 +130,8 @@ class SmbService {
     }
   }
 
-  /// 列出目录
   Future<List<String>> listDirectories(SmbConfig config, String path) async {
-    int retries = 3; // 增加重试次数
+    int retries = 3;
     while (retries-- > 0) {
       try {
         final connect = await _getConnection(config);
@@ -136,7 +141,6 @@ class SmbService {
         return files.where((f) => f.isDirectory()).map((f) => f.name).toList();
       } on SmbException catch (e) {
         final msg = e.toString().toLowerCase();
-        // 判断是否为连接错误（应该重试）
         final isConnectionError = msg.contains('network name') ||
                                    msg.contains('nt_status') ||
                                    msg.contains('not available') ||
@@ -144,10 +148,8 @@ class SmbService {
                                    msg.contains('connection reset') ||
                                    msg.contains('reset by peer');
         if (!isConnectionError) {
-          // 非连接错误（如权限不足、路径不存在）直接抛出
           rethrow;
         }
-        // 连接错误，检查重试次数
         if (retries == 0) rethrow;
         _invalidateConnection(config.host, config.username);
       } on Exception {
@@ -158,8 +160,15 @@ class SmbService {
     return [];
   }
 
-  /// 获取媒体文件列表
-  Future<List<MediaItem>> getMediaItems(SmbConfig config, {String path = ''}) async {
+  Future<List<MediaItem>> getAllMediaItems(SmbConfig config, {String path = '', bool useCache = true}) async {
+    await _ensureCacheInitialized();
+    if (useCache) {
+      final cached = await _cacheService.getCachedAlbumMediaItems(config.id, path);
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     int retries = 3;
     while (retries-- > 0) {
       try {
@@ -186,6 +195,7 @@ class SmbService {
             ));
           }
         }
+        await _cacheService.cacheAlbumMediaItems(config.id, path, items);
         return items;
       } on SmbException catch (e) {
         final msg = e.toString().toLowerCase();
@@ -206,7 +216,26 @@ class SmbService {
     return [];
   }
 
-  /// 创建远程目录
+  Future<MediaItemPage> getMediaItems(
+    SmbConfig config, {
+    String path = '',
+    int offset = 0,
+    int limit = _pageSize,
+    bool useCache = true,
+  }) async {
+    final allItems = await getAllMediaItems(config, path: path, useCache: useCache);
+
+    final total = allItems.length;
+    final end = (offset + limit > total) ? total : offset + limit;
+    final pageItems = (offset < total) ? allItems.sublist(offset, end) : <MediaItem>[];
+
+    return MediaItemPage(
+      items: pageItems,
+      total: total,
+      hasMore: end < total,
+    );
+  }
+
   Future<void> createDirectory(SmbConfig config, String path) async {
     int retries = 3;
     while (retries-- > 0) {
@@ -233,9 +262,15 @@ class SmbService {
     }
   }
 
-  /// 获取相册列表（扫描 rootPath 下的所有子文件夹）
-  /// 每个子文件夹作为一个相册，统计图片数量，取最新图片作为封面
-  Future<List<Album>> getAlbums(SmbConfig config, {String currentPath = ''}) async {
+  Future<List<Album>> getAlbums(SmbConfig config, {String currentPath = '', bool useCache = true}) async {
+    await _ensureCacheInitialized();
+    if (useCache) {
+      final cached = await _cacheService.getCachedAlbums(config.id);
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     int retries = 3;
     while (retries-- > 0) {
       try {
@@ -253,40 +288,31 @@ class SmbService {
               ? albumFolderName
               : '$currentPath/$albumFolderName';
 
-          // 扫描该目录下的所有文件
           try {
             final subFolder = await connect.file(_buildSMBPath(config, albumFullPath));
             final subFiles = await connect.listFiles(subFolder);
 
-            // 筛选图片文件
             final imageFiles = subFiles.where((f) => !f.isDirectory() && _isImage(f.name)).toList();
 
             if (imageFiles.isEmpty) {
-              // 没有图片的文件夹不显示为相册
               continue;
             }
 
-            // 先尝试读取自定义封面
             String? coverPath;
             final prefs = await _getPrefs();
             final customCoverKey = 'custom_cover_${config.id}_$albumFullPath';
             final customCover = prefs.getString(customCoverKey);
 
-            // 验证自定义封面文件是否存在（通过尝试构造 SmbFile）
             if (customCover != null) {
               try {
                 final coverFile = await connect.file(_buildSMBPath(config, customCover));
-                // SmbFile 构造成功不抛异常，认为路径有效
-                // 实际读取图片时会再次验证
                 coverPath = customCover;
               } catch (_) {
-                // 自定义封面失效，使用自动选择
                 coverPath = null;
                 prefs.remove(customCoverKey);
               }
             }
 
-            // 如果没有自定义封面或自定义封面失效，找最新修改的图片作为封面
             if (coverPath == null) {
               SmbFile? latestImage;
               for (final img in imageFiles) {
@@ -309,13 +335,12 @@ class SmbService {
               parentPath: currentPath,
             ));
           } catch (e) {
-            // 无法读取该子目录，跳过
             continue;
           }
         }
 
-        // 按名称排序
         albums.sort((a, b) => a.name.compareTo(b.name));
+        await _cacheService.cacheAlbums(config.id, albums);
         return albums;
       } on SmbException catch (e) {
         final msg = e.toString().toLowerCase();
@@ -336,8 +361,15 @@ class SmbService {
     return [];
   }
 
-  /// 读取文件
-  Future<Uint8List> readFile(SmbConfig config, String remotePath) async {
+  Future<Uint8List> readFile(SmbConfig config, String remotePath, {bool useCache = true}) async {
+    await _ensureCacheInitialized();
+    if (useCache) {
+      final cachedFile = await _cacheService.getCachedImage(config.id, remotePath);
+      if (cachedFile != null) {
+        return await cachedFile.readAsBytes();
+      }
+    }
+
     int retries = 3;
     while (retries-- > 0) {
       try {
@@ -354,7 +386,9 @@ class SmbService {
         await for (final chunk in stream) {
           bytes.addAll(chunk);
         }
-        return Uint8List.fromList(bytes);
+        final result = Uint8List.fromList(bytes);
+        await _cacheService.cacheImage(config.id, remotePath, result);
+        return result;
       } on SmbException catch (e) {
         final msg = e.toString().toLowerCase();
         final isConnectionError = msg.contains('network name') ||
@@ -374,7 +408,6 @@ class SmbService {
     return Uint8List(0);
   }
 
-  /// 下载文件
   Future<String> downloadFile(SmbConfig config, String remotePath) async {
     final data = await readFile(config, remotePath);
     final dir = await getApplicationDocumentsDirectory();
@@ -384,8 +417,23 @@ class SmbService {
     return localPath;
   }
 
-  /// 上传文件
-  Future<void> uploadFile(SmbConfig config, String remotePath, Uint8List data) async {
+  Future<Uint8List> readThumbnail(SmbConfig config, String remotePath) async {
+    await _ensureCacheInitialized();
+    final cachedThumb = await _cacheService.getCachedThumbnail(config.id, remotePath);
+    if (cachedThumb != null) {
+      return cachedThumb;
+    }
+
+    final originalData = await readFile(config, remotePath, useCache: true);
+    final thumbnail = await _cacheService.generateAndCacheThumbnail(
+      config.id,
+      remotePath,
+      originalData,
+    );
+    return thumbnail;
+  }
+
+  Future<void> uploadFile(SmbConfig config, String remotePath, Uint8List data, {Function(double)? onProgress}) async {
     int retries = 3;
     while (retries-- > 0) {
       try {
@@ -398,8 +446,20 @@ class SmbService {
         }
         final file = await connect.createFile(fullPath);
         final writer = await connect.openWrite(file);
-        writer.add(data);
-        await writer.flush();
+
+        const chunkSize = 64 * 1024;
+        int offset = 0;
+        while (offset < data.length) {
+          final end = (offset + chunkSize > data.length) ? data.length : offset + chunkSize;
+          final chunk = data.sublist(offset, end);
+          writer.add(chunk);
+          await writer.flush();
+          offset = end;
+
+          if (onProgress != null) {
+            onProgress(offset / data.length);
+          }
+        }
         await writer.close();
         return;
       } on SmbException catch (e) {
@@ -420,7 +480,6 @@ class SmbService {
     }
   }
 
-  /// 关闭指定服务器的连接
   Future<void> closeConnection(String serverId) async {
     final keysToRemove = <String>[];
     for (final entry in _connections.entries) {
@@ -436,7 +495,6 @@ class SmbService {
     }
   }
 
-  /// 关闭所有连接
   Future<void> closeAllConnections() async {
     for (final wrapper in _connections.values) {
       await wrapper.connect.close();
@@ -444,23 +502,18 @@ class SmbService {
     _connections.clear();
   }
 
-  /// 设置相册自定义封面
-  /// [serverId] 服务器 ID，[albumPath] 相册相对路径，[coverPath] 封面图片相对路径
   Future<void> setCustomCover(String serverId, String albumPath, String coverPath) async {
     final prefs = await _getPrefs();
     final key = 'custom_cover_${serverId}_$albumPath';
     await prefs.setString(key, coverPath);
   }
 
-  /// 获取相册自定义封面
-  /// 返回封面图片的相对路径，如果没有设置则返回 null
   Future<String?> getCustomCover(String serverId, String albumPath) async {
     final prefs = await _getPrefs();
     final key = 'custom_cover_${serverId}_$albumPath';
     return prefs.getString(key);
   }
 
-  /// 清除相册自定义封面
   Future<void> clearCustomCover(String serverId, String albumPath) async {
     final prefs = await _getPrefs();
     final key = 'custom_cover_${serverId}_$albumPath';

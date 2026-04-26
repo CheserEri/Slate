@@ -23,9 +23,18 @@ final transfersProvider = StateNotifierProvider<TransfersNotifier, AsyncValue<Li
 class TransfersNotifier extends StateNotifier<AsyncValue<List<TransferTask>>> {
   final _storage = LocalStorageService();
   final _smbService = SmbService();
+  final Map<String, StreamController<double>> _progressControllers = {};
 
   TransfersNotifier() : super(const AsyncValue.loading()) {
     load();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _progressControllers.values) {
+      controller.close();
+    }
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -38,6 +47,9 @@ class TransfersNotifier extends StateNotifier<AsyncValue<List<TransferTask>>> {
   }
 
   Future<void> cancel(String id) async {
+    _progressControllers[id]?.close();
+    _progressControllers.remove(id);
+
     final tasks = state.valueOrNull ?? [];
     final updated = tasks.map((t) {
       if (t.id == id) {
@@ -126,63 +138,113 @@ class TransfersNotifier extends StateNotifier<AsyncValue<List<TransferTask>>> {
     var failedCount = 0;
 
     for (final path in localPaths) {
-      try {
-        final file = File(path);
-        final bytes = await file.readAsBytes();
-        final fileName = path.split('/').last;
-        final remotePath = '$remoteDir/$fileName';
+      final taskId = DateTime.now().millisecondsSinceEpoch.toString();
+      final file = File(path);
+      final fileSize = await file.length();
 
-        final taskId = DateTime.now().millisecondsSinceEpoch.toString();
-        final task = TransferTask(
-          id: taskId,
-          serverId: serverId,
-          transferType: TransferType.upload,
-          remotePath: remotePath,
-          localPath: path,
-          totalBytes: bytes.length,
-          writtenBytes: 0,
-          progress: 0,
-          status: TransferStatus.running,
-          errorMessage: null,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
+      final task = TransferTask(
+        id: taskId,
+        serverId: serverId,
+        transferType: TransferType.upload,
+        remotePath: '$remoteDir/${path.split('/').last}',
+        localPath: path,
+        totalBytes: fileSize,
+        writtenBytes: 0,
+        progress: 0,
+        status: TransferStatus.running,
+        errorMessage: null,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final tasks = state.valueOrNull ?? [];
+      await _storage.saveTransfers([...tasks, task]);
+      await load();
+
+      try {
+        final progressController = StreamController<double>.broadcast();
+        _progressControllers[taskId] = progressController;
+
+        final bytes = await file.readAsBytes();
+        int lastWrittenBytes = 0;
+
+        await _smbService.uploadFile(
+          server,
+          '$remoteDir/${path.split('/').last}',
+          bytes,
+          onProgress: (progress) {
+            final writtenBytes = (progress * fileSize).round();
+            if (writtenBytes != lastWrittenBytes) {
+              lastWrittenBytes = writtenBytes;
+              _updateTaskProgress(taskId, writtenBytes, progress);
+            }
+          },
         );
 
-        final tasks = state.valueOrNull ?? [];
-        await _storage.saveTransfers([...tasks, task]);
-        await load();
-
-        await _smbService.uploadFile(server, remotePath, bytes);
-
-        final updatedTasks = state.valueOrNull ?? [];
-        final updated = updatedTasks.map((t) {
-          if (t.id == taskId) {
-            return TransferTask(
-              id: t.id,
-              serverId: t.serverId,
-              transferType: t.transferType,
-              remotePath: t.remotePath,
-              localPath: t.localPath,
-              totalBytes: t.totalBytes,
-              writtenBytes: t.totalBytes,
-              progress: 1.0,
-              status: TransferStatus.done,
-              errorMessage: null,
-              createdAt: t.createdAt,
-              updatedAt: DateTime.now(),
-            );
-          }
-          return t;
-        }).toList();
-        await _storage.saveTransfers(updated);
+        _updateTaskComplete(taskId, TransferStatus.done);
         successCount += 1;
-      } catch (_) {
+      } catch (e) {
+        _updateTaskComplete(taskId, TransferStatus.failed, errorMessage: e.toString());
         failedCount += 1;
+      } finally {
+        _progressControllers.remove(taskId)?.close();
       }
     }
 
     await load();
     return BackupResult(successCount: successCount, failedCount: failedCount);
+  }
+
+  void _updateTaskProgress(String taskId, int writtenBytes, double progress) {
+    state.whenData((tasks) {
+      final updated = tasks.map((t) {
+        if (t.id == taskId && t.status == TransferStatus.running) {
+          return TransferTask(
+            id: t.id,
+            serverId: t.serverId,
+            transferType: t.transferType,
+            remotePath: t.remotePath,
+            localPath: t.localPath,
+            totalBytes: t.totalBytes,
+            writtenBytes: writtenBytes,
+            progress: progress,
+            status: t.status,
+            errorMessage: t.errorMessage,
+            createdAt: t.createdAt,
+            updatedAt: DateTime.now(),
+          );
+        }
+        return t;
+      }).toList();
+      state = AsyncValue.data(updated);
+      _storage.saveTransfers(updated);
+    });
+  }
+
+  void _updateTaskComplete(String taskId, TransferStatus status, {String? errorMessage}) {
+    state.whenData((tasks) {
+      final updated = tasks.map((t) {
+        if (t.id == taskId) {
+          return TransferTask(
+            id: t.id,
+            serverId: t.serverId,
+            transferType: t.transferType,
+            remotePath: t.remotePath,
+            localPath: t.localPath,
+            totalBytes: t.totalBytes,
+            writtenBytes: status == TransferStatus.done ? t.totalBytes : t.writtenBytes,
+            progress: status == TransferStatus.done ? 1.0 : t.progress,
+            status: status,
+            errorMessage: errorMessage,
+            createdAt: t.createdAt,
+            updatedAt: DateTime.now(),
+          );
+        }
+        return t;
+      }).toList();
+      state = AsyncValue.data(updated);
+      _storage.saveTransfers(updated);
+    });
   }
 }
 
